@@ -56,7 +56,6 @@ def parse_yayoi_raw(content: str) -> pd.DataFrame:
             continue
         if len(parts) < 15:
             continue
-
         rows.append({
             "date":           parse_reiwa_date(str(parts[3])),
             "slip_no":        str(parts[1]).strip(),
@@ -72,11 +71,9 @@ def parse_yayoi_raw(content: str) -> pd.DataFrame:
             "credit_tax_amt": _to_num(parts[15]) if len(parts) > 15 else 0.0,
             "description":    str(parts[16]).strip().strip('"') if len(parts) > 16 else "",
         })
-
     df = pd.DataFrame(rows)
     if df.empty:
         return df
-    # 借方or貸方が空でも残す（複合仕訳の片側のみ行）
     df["debit_account"]  = df["debit_account"].replace("nan", "")
     df["credit_account"] = df["credit_account"].replace("nan", "")
     return df.reset_index(drop=True)
@@ -160,55 +157,105 @@ def parse_csv(content: str) -> tuple:
 
 def parse_opening_balances(content: str) -> dict:
     """
-    期首残高CSVをパース。
-    フォーマット例（弥生「残高試算表」エクスポート）:
-      勘定科目,補助科目,期首残高
-      現金,,319541
-      普通預金,永和信用金庫・梅田,5000000
-      普通預金,〇〇銀行,1200000
+    弥生「残高試算表」または「補助残高一覧表」のエクスポートCSVから期首残高を読み込む。
+
+    対応フォーマット:
+    ① 弥生 残高試算表（主科目）:
+       "[明細行]","事業所(合計)","12月度","[貸借対照表]","現金",319541,34405,156407,197539,...
+       → 列[4]=勘定科目, 列[5]=前期繰越（期首残高）
+
+    ② 弥生 補助残高一覧表（補助科目）:
+       "[明細行]","事業所(合計)","12月度","[貸借科目]","普通預金","永和信用金庫",74878245,...
+       → 列[4]=勘定科目, 列[5]=補助科目, 列[6]=前期繰越（期首残高）
+
+    ③ シンプル形式（手入力用）:
+       勘定科目, 補助科目, 期首残高  例: 普通預金,永和信用金庫,5000000
+       勘定科目, , 期首残高          例: 現金,,319541
 
     Returns:
       {
-        "現金": 319541,
-        "普通預金（永和信用金庫・梅田）": 5000000,
-        "普通預金（〇〇銀行）": 1200000,
-        "普通預金": 6200000,   ← 補助科目なし=合計も登録
+        "現金":                          319541,
+        "普通預金（永和信用金庫・梅田）":  74878245,
+        "普通預金（三菱ＵＦＪ・大阪駅前）": 154966,
+        "普通預金":                      合計値（補助科目の積み上げ）,
+        "売掛金（ＷＳＰ）":              18823349,
+        ...
       }
     """
-    balances = {}
-    account_totals: dict = {}
+    balances: dict = {}
+    sub_totals: dict = {}  # 補助科目から積み上げる合計
 
     for line in content.split("\n"):
         line = line.strip()
         if not line:
             continue
-        parts = [p.strip().strip('"') for p in line.split(",")]
+
+        # CSV行をパース
+        try:
+            parts = list(next(pd.read_csv(
+                io.StringIO(line), header=None, quotechar='"'
+            ).itertuples(index=False)))
+        except Exception:
+            continue
+
+        parts = [str(p).strip().strip('"') for p in parts]
+
+        # ── ① 弥生フォーマット（[明細行] 形式）──
+        if len(parts) >= 1 and parts[0] == "[明細行]":
+            # 補助残高一覧表: [明細行],部門,月度,[貸借科目],勘定科目,補助科目,前期繰越,...
+            if len(parts) >= 7 and parts[3] == "[貸借科目]":
+                account = parts[4]
+                sub     = parts[5]
+                amount  = _to_num(parts[6])  # 前期繰越
+
+                # 「指定なし」は補助科目なしの科目全体を指す
+                if sub in ("指定なし", ""):
+                    balances[account] = amount
+                else:
+                    key = f"{account}（{sub}）"
+                    balances[key] = amount
+                    sub_totals[account] = sub_totals.get(account, 0.0) + amount
+
+            # 残高試算表（主科目）: [明細行],部門,月度,[貸借対照表]/[損益計算書],勘定科目,前期繰越,...
+            elif len(parts) >= 6 and parts[3] in ("[貸借対照表]", "[損益計算書]", "[製造原価報告書]"):
+                account = parts[4]
+                amount  = _to_num(parts[5])  # 前期繰越
+                # 補助科目からの積み上げがなければ主科目として登録
+                if account not in sub_totals:
+                    balances[account] = amount
+            continue
+
+        # ── ② シンプル形式（手入力 / 他ソフト）──
+        # 勘定科目, 補助科目, 金額  または  勘定科目, 金額
         if len(parts) < 2:
             continue
-
         account = parts[0]
-        sub     = parts[1] if len(parts) > 1 else ""
-        # 金額は3列目優先、なければ2列目
-        amount_str = parts[2] if len(parts) > 2 else parts[1]
-        try:
-            amount = float(amount_str.replace(",", ""))
-        except ValueError:
-            continue  # ヘッダー行などスキップ
-
+        # 弥生の行タグ・ヘッダー行・空科目はスキップ
         if not account:
             continue
+        if account.startswith("[") and account.endswith("]"):
+            continue  # [表題行][区分行][合計行] など
+        if account in ("勘定科目", "科目", "帳票名", "書式名", "事業所名",
+                       "処理日時", "月次/期間", "集計期間", "税抜/税込"):
+            continue
 
-        if sub and sub not in ("", "nan"):
-            key = f"{account}（{sub}）"
-            balances[key] = amount
-            account_totals[account] = account_totals.get(account, 0) + amount
+        if len(parts) >= 3:
+            sub    = parts[1]
+            amount = _to_num(parts[2])
+            if sub and sub not in ("", "nan"):
+                key = f"{account}（{sub}）"
+                balances[key] = amount
+                sub_totals[account] = sub_totals.get(account, 0.0) + amount
+            else:
+                if account not in sub_totals:
+                    balances[account] = amount
         else:
-            # 補助科目なしの行は科目合計として登録
-            balances[account] = amount
+            amount = _to_num(parts[1])
+            if account not in sub_totals:
+                balances[account] = amount
 
-    # 補助科目から積み上げた合計がある場合は上書き（より正確）
-    for acc, total in account_totals.items():
-        if acc not in balances or balances[acc] == 0:
-            balances[acc] = total
+    # 補助科目の積み上げ合計で主科目を上書き（より正確）
+    for acc, total in sub_totals.items():
+        balances[acc] = total
 
     return balances
