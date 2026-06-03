@@ -80,7 +80,11 @@ def _check_cash_balance(df: pd.DataFrame, ob: dict) -> List[Dict[str, Any]]:
 
         for (acc, sub) in targets:
             label   = f"{acc}（{sub}）" if sub else acc
-            opening = ob.get(label) if ob.get(label) is not None else ob.get(acc)
+            # 補助科目がある場合は専用残高のみ使用（合計値を誤適用しない）
+            if sub:
+                opening = ob.get(label)          # 例: 普通預金（永和信用金庫・梅田）
+            else:
+                opening = ob.get(acc)            # 補助科目なしの場合のみ科目合計を使用
 
             if opening is None:
                 skipped.append(label)
@@ -160,10 +164,16 @@ def _check_single_account(
     - 翌月回収（発生→翌月ゼロ）は正常サイクルとして除外
     - 最終入力月の残高は「まだ回収期限未到来」として除外
     """
-    label   = f"{base_acc}（{sub}）" if sub else base_acc
-    opening = ob.get(label) if ob.get(label) is not None else ob.get(base_acc)
-    if opening is None:
-        opening = 0.0
+    label = f"{base_acc}（{sub}）" if sub else base_acc
+
+    if sub:
+        # 補助科目がある場合 → その補助科目専用の期首残高のみ使用
+        # 科目合計（ob.get(base_acc)）は絶対に使わない
+        # （合計値を1社に適用するとマイナス誤検知の原因になるため）
+        opening = ob.get(label, 0.0)
+    else:
+        # 補助科目なしの場合 → 科目合計残高を使用
+        opening = ob.get(base_acc, 0.0)
 
     d_rows = df[df["debit_account"].astype(str).str.contains(base_acc, na=False)]
     c_rows = df[df["credit_account"].astype(str).str.contains(base_acc, na=False)]
