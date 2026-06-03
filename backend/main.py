@@ -258,7 +258,7 @@ async def _run_checks(c: dict) -> JSONResponse:
     issues.extend(check_pl(df))
     issues.extend(check_tax(df))
     if prior_df is not None:
-        issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month))
+        issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month, ob or None))
 
     valid_dates = df["date"].dropna()
     sw_labels = {

@@ -22,15 +22,18 @@ MIN_AMOUNT_DIFF = 200000  # 最小差額（ノイズ除去）
 
 
 def check_yoy(
-    current_df:         pd.DataFrame,
-    prior_df:           pd.DataFrame,
-    prior_ob:           Optional[dict] = None,
+    current_df:          pd.DataFrame,
+    prior_df:            pd.DataFrame,
+    prior_ob:            Optional[dict] = None,
     last_complete_month: Optional["pd.Period"] = None,
+    current_ob:          Optional[dict] = None,   # 当期首残高（BS比較の精度向上用）
 ) -> List[Dict[str, Any]]:
     issues = []
     issues.extend(_compare_pl_cumulative(current_df, prior_df, last_complete_month))
     if prior_ob:
-        issues.extend(_compare_bs_balance(current_df, prior_df, prior_ob, last_complete_month))
+        issues.extend(_compare_bs_balance(
+            current_df, prior_df, prior_ob, last_complete_month, current_ob or {}
+        ))
     return issues
 
 
@@ -129,8 +132,12 @@ def _compare_bs_balance(
     prior_df:            pd.DataFrame,
     prior_ob:            dict,
     last_complete_month: Optional["pd.Period"],
+    current_ob:          dict,
 ) -> List[Dict[str, Any]]:
-    """前期首残高 + 前期仕訳で前期期末残高を再現し、当期期末残高と比較する"""
+    """
+    前期首残高 + 前期仕訳で前期期末残高を再現し、当期期末残高と比較する。
+    当期末残高 = 当期首残高（current_ob）+ 当期純増減
+    """
     issues = []
 
     for account, normal_side in BS_ACCOUNTS:
@@ -138,8 +145,11 @@ def _compare_bs_balance(
         if prior_opening is None:
             continue
 
-        prior_end = _period_end_balance(prior_df, account, normal_side, prior_opening)
-        curr_end  = _period_end_balance(current_df, account, normal_side, 0)
+        prior_end = _period_end_balance(prior_df,   account, normal_side, prior_opening)
+
+        # 当期首残高: current_ob にあればそれを使用、なければ 前期末（prior_end）を使用
+        curr_opening = current_ob.get(account, prior_end)
+        curr_end     = _period_end_balance(current_df, account, normal_side, curr_opening)
 
         if prior_end == 0:
             continue
