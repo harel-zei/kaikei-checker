@@ -200,7 +200,8 @@ def _check_month_over_month(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues = []
 
     # 主要費用科目をチェック
-    target_accounts = ["給与", "外注費", "地代家賃", "広告宣伝費", "租税公課"]
+    # 租税公課は月によって大きく変動するため前月比チェックから除外（YoY累計で比較）
+    target_accounts = ["給与", "外注費", "地代家賃", "広告宣伝費"]
 
     for account in target_accounts:
         entries = df[

@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from parsers.csv_parser import parse_csv, parse_opening_balances
 from parsers.file_detector import auto_classify_files
-from checkers.bs_checker import check_bs
+from checkers.bs_checker import check_bs, estimate_last_complete_month
 from checkers.pl_checker import check_pl
 from checkers.tax_checker import check_tax
 from checkers.yoy_checker import check_yoy
@@ -139,12 +139,13 @@ async def _run_checks(c: dict) -> JSONResponse:
     )
 
     # チェック実行
+    last_month = estimate_last_complete_month(df)
     issues = []
     issues.extend(check_bs(df, ob))
     issues.extend(check_pl(df))
     issues.extend(check_tax(df))
     if prior_df is not None:
-        issues.extend(check_yoy(df, prior_df, prior_ob or None))
+        issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month))
 
     valid_dates = df["date"].dropna()
     sw_labels = {

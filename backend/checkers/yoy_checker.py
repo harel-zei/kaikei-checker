@@ -1,11 +1,11 @@
 """
 前年同月比較チェックモジュール
-累計比較版：月次ではなく「対象期間の合計」で前年と比較する
+累計比較版：当期の入力済み期間と前期の同期間を累計で比較する
 """
 import pandas as pd
 from typing import List, Dict, Any, Optional
 
-# 比較対象の主要PL科目
+# 比較対象の主要PL科目（累計比較）
 COMPARE_PL = [
     ("製品売上高",  "credit"), ("商品売上高",  "credit"),
     ("仕入高",      "debit"),  ("材料仕入高",  "debit"),  ("副資材仕入",  "debit"),
@@ -14,6 +14,7 @@ COMPARE_PL = [
     ("地代家賃",    "debit"),  ("水道光熱費",  "debit"),
     ("修繕費",      "debit"),  ("接待交際費",  "debit"),
     ("減価償却費",  "debit"),  ("法定福利費",  "debit"),
+    ("租税公課",    "debit"),  # 月次変動が大きいため累計で比較
 ]
 
 ALERT_THRESHOLD = 20.0    # 累計変動率（%）のアラート閾値
@@ -24,43 +25,62 @@ def check_yoy(
     current_df:         pd.DataFrame,
     prior_df:           pd.DataFrame,
     prior_ob:           Optional[dict] = None,
+    last_complete_month: Optional["pd.Period"] = None,
 ) -> List[Dict[str, Any]]:
     issues = []
-    issues.extend(_compare_pl_cumulative(current_df, prior_df))
+    issues.extend(_compare_pl_cumulative(current_df, prior_df, last_complete_month))
     if prior_ob:
-        issues.extend(_compare_bs_balance(current_df, prior_df, prior_ob))
+        issues.extend(_compare_bs_balance(current_df, prior_df, prior_ob, last_complete_month))
     return issues
 
 
 # ──────────────────────────────────────────────────
-# PL 累計比較（当期期間合計 vs 前期同期間合計）
+# PL 累計比較（当期入力済み期間 vs 前期同期間）
 # ──────────────────────────────────────────────────
 def _compare_pl_cumulative(
-    current_df: pd.DataFrame,
-    prior_df:   pd.DataFrame,
+    current_df:          pd.DataFrame,
+    prior_df:            pd.DataFrame,
+    last_complete_month: Optional["pd.Period"],
 ) -> List[Dict[str, Any]]:
     """
     当期と前期の「同じ月範囲の累計」を比較する。
 
-    例: 当期が12月〜4月のデータなら、前期の12月〜4月合計と比較。
-    単月比較ではなく累計なので、季節変動による誤検知が大幅に減少する。
+    ・当期データは last_complete_month までに限定する
+      （未入力期間を比較対象から除外）
+    ・前期データは当期と同じ月番号の範囲を使う
+    ・月をまたぐ会計年度（12月〜4月など）も正しく処理する
+    ・ラベルは当期の実際の期間を表示（例: 12月〜4月 累計）
     """
     issues = []
 
-    # 当期の月範囲（月番号）を取得
-    curr_months = set(current_df["date"].dt.month.dropna().astype(int).unique())
-    prior_months = set(prior_df["date"].dt.month.dropna().astype(int).unique())
-    common_months = sorted(curr_months & prior_months)
+    # 当期の Period 範囲（last_complete_month でカット）
+    curr_periods = current_df["date"].dt.to_period("M").dropna().unique()
+    curr_periods = sorted(curr_periods)
+    if last_complete_month:
+        curr_periods = [p for p in curr_periods if p <= last_complete_month]
+    if not curr_periods:
+        return issues
+
+    curr_first = curr_periods[0]
+    curr_last  = curr_periods[-1]
+
+    # 当期に使う月番号のセット
+    curr_months = {p.month for p in curr_periods}
+
+    # 前期の対応する月を取得（同じ月番号）
+    prior_periods = prior_df["date"].dt.to_period("M").dropna().unique()
+    prior_months_available = {p.month for p in prior_periods}
+    common_months = sorted(curr_months & prior_months_available)
 
     if not common_months:
         return issues
 
-    m_start = min(common_months)
-    m_end   = max(common_months)
-    period_label = f"{m_start}月〜{m_end}月 累計"
+    # ラベル: 当期の実際の月範囲（日付順）で表示
+    # 例: 12月〜4月 累計（年をまたいでも月番号を順番通り）
+    period_label = _make_period_label(curr_periods)
 
     for account, side in COMPARE_PL:
-        curr_total = _period_total(current_df, account, side, common_months)
+        curr_total = _period_total(current_df, account, side, curr_months)
         prev_total = _period_total(prior_df,   account, side, common_months)
 
         if prev_total == 0 or curr_total == 0:
@@ -105,26 +125,20 @@ BS_ACCOUNTS = [
 
 
 def _compare_bs_balance(
-    current_df: pd.DataFrame,
-    prior_df:   pd.DataFrame,
-    prior_ob:   dict,
+    current_df:          pd.DataFrame,
+    prior_df:            pd.DataFrame,
+    prior_ob:            dict,
+    last_complete_month: Optional["pd.Period"],
 ) -> List[Dict[str, Any]]:
     """前期首残高 + 前期仕訳で前期期末残高を再現し、当期期末残高と比較する"""
     issues = []
-
-    # 当期の最終月を取得
-    curr_last = current_df["date"].dt.to_period("M").dropna().max()
-    # 前期の最終月
-    prior_last = prior_df["date"].dt.to_period("M").dropna().max()
 
     for account, normal_side in BS_ACCOUNTS:
         prior_opening = prior_ob.get(account, None)
         if prior_opening is None:
             continue
 
-        # 前期期末残高を再現
         prior_end = _period_end_balance(prior_df, account, normal_side, prior_opening)
-        # 当期期末残高（期首残高なし → 当期増減のみ）
         curr_end  = _period_end_balance(current_df, account, normal_side, 0)
 
         if prior_end == 0:
@@ -137,7 +151,7 @@ def _compare_bs_balance(
                 "level":    "warning",
                 "category": "前年比(BS)",
                 "account":  account,
-                "month":    f"期末残高比較",
+                "month":    "期末残高比較",
                 "message": (
                     f"【前年比較・期末残高】{account} の期末残高が"
                     f"前年同期比 {pct:+.1f}% {direction}しています"
@@ -157,13 +171,26 @@ def _compare_bs_balance(
 # ──────────────────────────────────────────────────
 # ユーティリティ
 # ──────────────────────────────────────────────────
+def _make_period_label(periods: list) -> str:
+    """
+    Period リスト（日付順ソート済み）から表示ラベルを生成する。
+    例: [2025-12, 2026-01, 2026-02, 2026-03, 2026-04] → "12月〜4月 累計"
+    """
+    if not periods:
+        return "累計"
+    first_month = periods[0].month
+    last_month  = periods[-1].month
+    if first_month == last_month:
+        return f"{first_month}月 累計"
+    return f"{first_month}月〜{last_month}月 累計"
+
+
 def _period_total(
     df:      pd.DataFrame,
     account: str,
     side:    str,
-    months:  list,
+    months:  set,
 ) -> float:
-    """指定科目・サイドの指定月リストの合計を返す"""
     col_acc = f"{side}_account"
     col_amt = f"{side}_amount"
     if col_acc not in df.columns:
@@ -181,10 +208,9 @@ def _period_end_balance(
     normal_side: str,
     opening:     float,
 ) -> float:
-    """期間全体の期末残高を返す（opening + 借方合計 - 貸方合計）"""
-    d_total = df[df["debit_account"].astype(str).str.contains(account, na=False)]["debit_amount"].sum()
-    c_total = df[df["credit_account"].astype(str).str.contains(account, na=False)]["credit_amount"].sum()
+    d = df[df["debit_account"].astype(str).str.contains(account, na=False)]["debit_amount"].sum()
+    c = df[df["credit_account"].astype(str).str.contains(account, na=False)]["credit_amount"].sum()
     if normal_side == "debit":
-        return float(opening + d_total - c_total)
+        return float(opening + d - c)
     else:
-        return float(opening + c_total - d_total)
+        return float(opening + c - d)
