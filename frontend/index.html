@@ -190,7 +190,40 @@
       </div>
     </div>
 
-    <!-- クライアントの保存済みデータ表示 -->
+    <!-- 新規クライアント：前期データ登録エリア -->
+    <div id="newClientArea" style="display:none;margin-top:14px;padding:16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;">
+      <div style="font-size:.88rem;font-weight:700;color:#1e40af;margin-bottom:10px;">
+        📋 新規クライアント — 前期データを登録してください
+      </div>
+      <p style="font-size:.82rem;color:#374151;margin-bottom:12px;">
+        以下の3ファイルをまとめてドロップしてください。次回以降は自動で読み込まれます。
+      </p>
+      <!-- 新規用ドロップゾーン -->
+      <div class="drop-main" id="newClientDrop" style="padding:20px 16px;margin-bottom:10px;"
+           ondragover="onOver(event,'newClientDrop')" ondragleave="onLeave('newClientDrop')"
+           ondrop="onDropNewClient(event)"
+           onclick="document.getElementById('newClientFileInput').click()">
+        <div class="icon" style="font-size:1.8rem;">📁</div>
+        <div class="title" id="newClientDropTitle">前期ファイルをドロップ</div>
+        <div class="hint">
+          <strong>① 前期仕訳帳</strong>（例: 前期仕訳.txt）<br>
+          <strong>② 前期首残高</strong>（例: 前期期首残高.txt）<br>
+          <strong>③ 前期首補助残高</strong>（例: 前期首補助残高.txt）
+        </div>
+        <input type="file" id="newClientFileInput" accept=".csv,.txt" multiple style="display:none"
+               onchange="addNewClientFiles(this.files)">
+      </div>
+      <div id="newClientFileList" style="margin-bottom:10px;"></div>
+      <button class="btn btn-primary" id="newClientSaveBtn" onclick="saveNewClientPrior()"
+              disabled style="width:100%;justify-content:center;">
+        💾 このクライアントの前期データを保存
+      </button>
+      <p style="font-size:.78rem;color:#6b7280;margin-top:8px;">
+        ※ 前期データがない場合はスキップして当期ファイルだけでもチェックできます
+      </p>
+    </div>
+
+    <!-- 既存クライアント：保存済みデータ表示 -->
     <div id="clientStatus" style="display:none;margin-top:14px;">
       <div style="font-size:.82rem;color:#374151;font-weight:600;margin-bottom:8px;">💾 保存済みの前期データ</div>
       <div id="clientStatusBody"></div>
@@ -323,10 +356,89 @@
     showClientStatus(val);
   }
 
+  // 新規クライアント用ファイルリスト
+  const newClientFiles = [];
+
+  function addNewClientFiles(fileList) {
+    for (const f of fileList) {
+      if (newClientFiles.length >= 3) break;
+      if (!newClientFiles.find(x => x.name === f.name)) newClientFiles.push(f);
+    }
+    renderNewClientFileList();
+  }
+
+  function renderNewClientFileList() {
+    const list = document.getElementById('newClientFileList');
+    list.innerHTML = newClientFiles.map(f =>
+      `<div class="file-item"><span>📄</span><span class="name">${f.name}</span></div>`
+    ).join('');
+    const btn = document.getElementById('newClientSaveBtn');
+    if (btn) btn.disabled = newClientFiles.length === 0;
+    const zone = document.getElementById('newClientDrop');
+    const title = document.getElementById('newClientDropTitle');
+    if (newClientFiles.length > 0) {
+      zone?.classList.add('has-files');
+      if (title) title.textContent = `✅ ${newClientFiles.length}ファイル選択済み`;
+    }
+  }
+
+  function onDropNewClient(e) {
+    e.preventDefault();
+    document.getElementById('newClientDrop')?.classList.remove('over');
+    addNewClientFiles(e.dataTransfer.files);
+  }
+
+  async function saveNewClientPrior() {
+    if (!currentClient) { alert('クライアント名を入力してください'); return; }
+    if (newClientFiles.length === 0) { alert('ファイルを選択してください'); return; }
+
+    const fd = new FormData();
+    for (const f of newClientFiles) fd.append('files', f);
+
+    const btn = document.getElementById('newClientSaveBtn');
+    btn.disabled = true; btn.textContent = '保存中...';
+
+    try {
+      const res  = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/save-prior`, {
+        method: 'POST', body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
+
+      // 保存完了 → 既存クライアントのUIに切り替え
+      newClientFiles.length = 0;
+      document.getElementById('newClientArea').style.display = 'none';
+      await loadClientList();
+      document.getElementById('clientSelect').value = currentClient;
+      await showClientStatus(currentClient);
+      alert(`✅ 保存しました（${data.saved?.length || 0}ファイル）`);
+    } catch(e) {
+      alert('エラー: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = '💾 このクライアントの前期データを保存';
+    }
+  }
+
   async function showClientStatus(name) {
     try {
       const res = await fetch(`/api/clients/${encodeURIComponent(name)}`);
-      if (!res.ok) { hideClientStatus(); return; }
+
+      // 新規クライアント（未保存）
+      if (!res.ok) {
+        document.getElementById('clientStatus').style.display = 'none';
+        newClientFiles.length = 0;
+        const area = document.getElementById('newClientArea');
+        area.style.display = 'block';
+        document.getElementById('newClientDropTitle').textContent = '前期ファイルをドロップ';
+        document.getElementById('newClientDrop').classList.remove('has-files');
+        document.getElementById('newClientFileList').innerHTML = '';
+        document.getElementById('newClientSaveBtn').disabled = true;
+        updateDropHint();
+        return;
+      }
+
+      // 既存クライアント
+      document.getElementById('newClientArea').style.display = 'none';
       const info = await res.json();
       const saved = info.saved_files;
       clientHasPrior = {
@@ -367,6 +479,7 @@
   function hideClientStatus() {
     clientHasPrior = { journal: false, bal_main: false, bal_sub: false };
     document.getElementById('clientStatus').style.display = 'none';
+    document.getElementById('newClientArea').style.display = 'none';
     updateDropHint();
   }
 
