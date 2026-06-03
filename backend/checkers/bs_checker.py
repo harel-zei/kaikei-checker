@@ -15,12 +15,42 @@ RECEIVABLE_ACCOUNTS = ["売掛金", "電子記録債権", "未収入金"]
 PAYABLE_ACCOUNTS    = ["買掛金", "未払金", "未払費用"]
 
 
+def estimate_last_complete_month(df: pd.DataFrame) -> "pd.Period":
+    """
+    仕訳データから「最終会計入力月」を推定する。
+
+    手法:
+    1. 月ごとのユニーク勘定科目数を集計
+    2. 中央値の50%以上の活動がある月を「入力済み月」とみなす
+       （決算整理仕訳など少数の先行入力月は除外）
+    3. そのうち最後の月を返す
+
+    Returns: pd.Period（例: 2026-04）
+    """
+    period = df["date"].dt.to_period("M")
+    # 月ごとのユニーク科目数（借方・貸方合計）
+    def count_accounts(x):
+        d = set(x["debit_account"].dropna().astype(str).str.strip())
+        c = set(x["credit_account"].dropna().astype(str).str.strip())
+        return len((d | c) - {""})
+
+    monthly_counts = df.groupby(period).apply(count_accounts).sort_index()
+    if monthly_counts.empty:
+        return df["date"].dropna().dt.to_period("M").max()
+
+    median = monthly_counts.median()
+    threshold = median * 0.5
+    complete = monthly_counts[monthly_counts >= threshold]
+    return complete.index[-1] if not complete.empty else monthly_counts.index[-1]
+
+
 def check_bs(df: pd.DataFrame, opening_balances: dict = None) -> List[Dict[str, Any]]:
     ob = opening_balances or {}
+    last_month = estimate_last_complete_month(df)  # 最終会計入力月を推定
     issues = []
     issues.extend(_check_cash_balance(df, ob))
-    issues.extend(_check_receivables_by_sub(df, ob, RECEIVABLE_ACCOUNTS, "debit"))
-    issues.extend(_check_receivables_by_sub(df, ob, PAYABLE_ACCOUNTS,    "credit"))
+    issues.extend(_check_receivables_by_sub(df, ob, RECEIVABLE_ACCOUNTS, "debit",  last_month))
+    issues.extend(_check_receivables_by_sub(df, ob, PAYABLE_ACCOUNTS,    "credit", last_month))
     issues.extend(_check_tax_temp_accounts(df))
     issues.extend(_check_suspense_payments(df))
     issues.extend(_check_loan_repayment(df))
@@ -91,34 +121,21 @@ def _check_receivables_by_sub(
     df: pd.DataFrame,
     ob: dict,
     accounts: List[str],
-    normal_side: str,   # "debit"=売掛金系, "credit"=買掛金系
+    normal_side: str,
+    last_month: "pd.Period",
 ) -> List[Dict[str, Any]]:
-    """
-    取引先（補助科目）単位で期末残高を計算し、異常な残高を指摘する。
-
-    チェック内容:
-    ① 期首残高あり → 残高が計算できる（マイナスも検出）
-    ② 期首残高なし → 当期増減のみ（マイナスの場合は誤処理の可能性として報告）
-    ③ 残高がゼロのはずなのに残高がある（長期未消込）
-    """
     issues = []
-
     for base_acc in accounts:
         d_rows = df[df["debit_account"].astype(str).str.contains(base_acc, na=False)]
         c_rows = df[df["credit_account"].astype(str).str.contains(base_acc, na=False)]
         if d_rows.empty and c_rows.empty:
             continue
-
         subs = _collect_subs(d_rows, c_rows, df)
-
-        # 補助科目がない場合は科目全体のみ
         if not subs:
-            _check_single_account(issues, df, base_acc, None, ob, normal_side)
+            _check_single_account(issues, df, base_acc, None, ob, normal_side, last_month)
             continue
-
         for sub in subs:
-            _check_single_account(issues, df, base_acc, sub, ob, normal_side)
-
+            _check_single_account(issues, df, base_acc, sub, ob, normal_side, last_month)
     return issues
 
 
@@ -129,15 +146,19 @@ def _check_single_account(
     sub: str | None,
     ob: dict,
     normal_side: str,
+    last_month: "pd.Period",
 ) -> None:
     """
     1つの科目（補助科目）の月次残高を計算して異常を検出する。
 
     フラグを立てる条件:
     ① マイナス残高 → Error（消込超過・誤入力）
-    ② 2ヶ月以上残高が滞留している → Warning（長期未回収・未払）
-       ※「翌月回収」のような正常サイクルは除外する
-    残高0、または毎月回収できている場合はフラグなし。
+    ② 最終入力月時点で2ヶ月以上「その取引先への取引が全くない」状態が続き、
+       かつ残高が残っている → Warning（長期滞留）
+
+    除外するパターン:
+    - 翌月回収（発生→翌月ゼロ）は正常サイクルとして除外
+    - 最終入力月の残高は「まだ回収期限未到来」として除外
     """
     label   = f"{base_acc}（{sub}）" if sub else base_acc
     opening = ob.get(label) if ob.get(label) is not None else ob.get(base_acc)
@@ -151,8 +172,9 @@ def _check_single_account(
     if d_sub.empty and c_sub.empty:
         return
 
-    # 月次残高を計算
     period = df["date"].dt.to_period("M")
+
+    # 月次借方・貸方を集計
     monthly_d = d_sub.groupby(period.loc[d_sub.index])["debit_amount"].sum()
     monthly_c = c_sub.groupby(period.loc[c_sub.index])["credit_amount"].sum()
 
@@ -160,37 +182,51 @@ def _check_single_account(
     if all_periods.empty:
         return
 
-    # 月末残高を積み上げ
-    monthly_bal = {}
+    # ── 月末残高と「その月に取引があったか」を積み上げ ──
+    monthly_bal      = {}
+    monthly_activity = {}  # True = その月に借方or貸方の取引あり
     running = opening
+
     for p in all_periods:
-        running += monthly_d.get(p, 0) - monthly_c.get(p, 0) if normal_side == "debit" \
-              else monthly_c.get(p, 0) - monthly_d.get(p, 0)
-        monthly_bal[p] = running
+        d = monthly_d.get(p, 0)
+        c = monthly_c.get(p, 0)
+        if normal_side == "debit":
+            running += d - c
+        else:
+            running += c - d
+        monthly_bal[p]      = running
+        monthly_activity[p] = (d > 0 or c > 0)
 
-    final_balance = list(monthly_bal.values())[-1]
+    # last_month 以降は判定しない（入力がまだの期間）
+    # ただし last_month 自体は含める
+    check_bal = {p: v for p, v in monthly_bal.items() if p <= last_month}
+    if not check_bal:
+        return
 
-    # ① マイナス残高（消込超過・誤入力）
+    final_balance = list(check_bal.values())[-1]
+
+    # ① マイナス残高
     if final_balance < -1000:
         issues.append({
             "level": "error", "category": "BS", "account": label,
-            "month": str(list(monthly_bal.keys())[-1]),
+            "month": str(last_month),
             "message": (
-                f"【要修正】{label} の残高が {final_balance:,.0f}円 とマイナスになっています。"
+                f"【要修正】{label} の {last_month} 時点の残高が {final_balance:,.0f}円 とマイナスです。"
                 "消込超過または仕訳の誤入力の可能性があります。補助元帳を確認してください。"
             ),
         })
         return
 
-    # ② 滞留チェック：2ヶ月以上連続して残高が減少していない月を検出
-    stale_months = _detect_stale_balance(monthly_bal, threshold=1000, stale_months=2)
-    for stale_month, stale_bal in stale_months:
+    # ② 滞留チェック：取引が全くない月が2ヶ月以上続いて残高が残っている
+    stale = _detect_stale_by_activity(check_bal, monthly_activity, last_month,
+                                      threshold=1000, stale_count=2)
+    for stale_month, stale_bal in stale:
         issues.append({
             "level": "warning", "category": "BS", "account": label,
             "month": str(stale_month),
             "message": (
                 f"【要確認】{label} の残高 {stale_bal:,.0f}円 が"
-                f" {stale_month} 時点で2ヶ月以上動いていません。"
+                f" {stale_month} まで2ヶ月以上取引がなく滞留しています。"
                 "回収遅延または未払の可能性があります。補助元帳を確認してください。"
             ),
         })
@@ -288,48 +324,50 @@ def _check_loan_repayment(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # ────────────────────────────────────────────────
 # ユーティリティ
 # ────────────────────────────────────────────────
-def _detect_stale_balance(
-    monthly_bal: dict,
-    threshold: float = 1000,
-    stale_months: int = 2,
+def _detect_stale_by_activity(
+    monthly_bal:      dict,
+    monthly_activity: dict,
+    last_month:       "pd.Period",
+    threshold:        float = 1000,
+    stale_count:      int   = 2,
 ) -> list:
     """
-    月次残高辞書を受け取り、「N ヶ月以上残高が減少していない」月を返す。
+    「取引が全くない月が N ヶ月以上続いて残高が残っている」を検出する。
 
-    正常サイクル（翌月回収）の例:
-      12月: 175,384 → 1月: 0 → 1月: 296,054 → 2月: 0  ← フラグなし
+    判定ロジック:
+    - 残高がゼロになった月 → カウンターリセット（正常回収）
+    - 取引あり（借方 or 貸方 > 0）の月 → カウンターリセット（活動中）
+    - 取引ゼロ かつ 残高あり の月 → 滞留カウンター +1
+    - 滞留カウンター >= stale_count の月をフラグ
+    - last_month 自体の残高は「まだ回収期限未到来」として除外
+      （last_month に取引ゼロでも最終月は許容）
 
-    滞留の例:
-      12月: 500,000 → 1月: 500,000 → 2月: 500,000  ← フラグ
-
-    Returns: [(period, balance), ...]  最初に滞留が確認された月のみ返す
+    Returns: [(period, balance), ...]  最初に滞留が確認された月のみ
     """
-    items   = list(monthly_bal.items())
+    items   = [(p, v) for p, v in sorted(monthly_bal.items()) if p <= last_month]
     flagged = []
-    consecutive = 0
-    prev_bal = None
-    flagged_start = None
+    streak  = 0  # 取引なし月の連続カウント
 
-    for period, bal in items:
+    for i, (period, bal) in enumerate(items):
+        is_last = (period == last_month)
+
         if bal <= threshold:
-            # 残高がほぼ0になった → リセット
-            consecutive = 0
-            prev_bal    = None
-            flagged_start = None
+            streak = 0
             continue
 
-        if prev_bal is not None and bal >= prev_bal * 0.95:
-            # 前月より残高がほとんど減っていない（5%未満の減少は誤差として許容しない）
-            consecutive += 1
-            if consecutive >= stale_months and flagged_start is None:
-                flagged_start = period
-                flagged.append((period, bal))
-        else:
-            # 残高が減少した → リセット
-            consecutive   = 0
-            flagged_start = None
+        has_activity = monthly_activity.get(period, False)
 
-        prev_bal = bal
+        if has_activity:
+            # この月に取引あり → 正常、リセット
+            streak = 0
+        elif is_last:
+            # 最終入力月に取引がなくても「まだ回収期限未到来」として除外
+            pass
+        else:
+            # 取引なし かつ 最終月でもない → 滞留
+            streak += 1
+            if streak >= stale_count and not flagged:
+                flagged.append((period, bal))
 
     return flagged
 
