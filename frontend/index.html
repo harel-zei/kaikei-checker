@@ -718,12 +718,23 @@
       <div class="sc c-tot"><div class="n">${summary.error+summary.warning+summary.info}</div><div class="lbl">📊 合計</div></div>
     `;
 
+    const cat1 = issues.filter(i => i.check_id?.startsWith('1')).length;
+    const cat2 = issues.filter(i => i.check_id?.startsWith('2')).length;
+    const cat3 = issues.filter(i => i.check_id?.startsWith('3')).length;
+    const cat4 = issues.filter(i => i.check_id?.startsWith('4')).length;
+    const cat5 = issues.filter(i => i.check_id?.startsWith('5')).length;
+
     document.getElementById('filterTabs').innerHTML = `
       <div class="tab all active" onclick="filt('all',this)">すべて</div>
       <div class="tab error"      onclick="filt('error',this)">🔴 要修正 (${summary.error})</div>
       <div class="tab warning"    onclick="filt('warning',this)">🟡 要確認 (${summary.warning})</div>
       <div class="tab info"       onclick="filt('info',this)">🔵 提案 (${summary.info})</div>
       ${yoyCount > 0 ? `<div class="tab yoy" onclick="filt('yoy',this)">📈 前年比 (${yoyCount})</div>` : ''}
+      ${cat1 > 0 ? `<div class="tab" style="background:#f0f9ff;color:#0369a1;border:2px solid #bae6fd;" onclick="filt('cat1',this)">📋 網羅性 (${cat1})</div>` : ''}
+      ${cat2 > 0 ? `<div class="tab" style="background:#fff7ed;color:#c2410c;border:2px solid #fed7aa;" onclick="filt('cat2',this)">🧾 消費税 (${cat2})</div>` : ''}
+      ${cat3 > 0 ? `<div class="tab" style="background:#f0fdf4;color:#15803d;border:2px solid #bbf7d0;" onclick="filt('cat3',this)">🏗️ 資産 (${cat3})</div>` : ''}
+      ${cat4 > 0 ? `<div class="tab" style="background:#fdf4ff;color:#7e22ce;border:2px solid #e9d5ff;" onclick="filt('cat4',this)">💰 債権債務 (${cat4})</div>` : ''}
+      ${cat5 > 0 ? `<div class="tab" style="background:#fff1f2;color:#be123c;border:2px solid #fecdd3;" onclick="filt('cat5',this)">⚠️ 税務 (${cat5})</div>` : ''}
     `;
 
     window._issues = issues;
@@ -759,9 +770,15 @@
   function filt(key, el) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
-    const filtered = key === 'all' ? window._issues
-      : key === 'yoy' ? window._issues.filter(i => ['前年比','前年比(BS)'].includes(i.category))
-      : window._issues.filter(i => i.level === key);
+    const filtered =
+      key === 'all'  ? window._issues :
+      key === 'yoy'  ? window._issues.filter(i => ['前年比','前年比(BS)'].includes(i.category)) :
+      key === 'cat1' ? window._issues.filter(i => i.check_id?.startsWith('1')) :
+      key === 'cat2' ? window._issues.filter(i => i.check_id?.startsWith('2')) :
+      key === 'cat3' ? window._issues.filter(i => i.check_id?.startsWith('3')) :
+      key === 'cat4' ? window._issues.filter(i => i.check_id?.startsWith('4')) :
+      key === 'cat5' ? window._issues.filter(i => i.check_id?.startsWith('5')) :
+      window._issues.filter(i => i.level === key);
     renderIssues(filtered);
   }
 </script>

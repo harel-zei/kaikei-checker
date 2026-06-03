@@ -14,6 +14,11 @@ from checkers.bs_checker import check_bs, estimate_last_complete_month
 from checkers.pl_checker import check_pl
 from checkers.tax_checker import check_tax
 from checkers.yoy_checker import check_yoy
+from checkers.completeness_checker import check_completeness
+from checkers.tax_detail_checker import check_tax_detail
+from checkers.asset_checker import check_assets
+from checkers.ar_ap_checker import check_ar_ap
+from checkers.governance_checker import check_governance
 from client_store import (
     list_clients, save_prior_files, load_prior_files,
     get_client_info, delete_prior_file, delete_client,
@@ -257,6 +262,17 @@ async def _run_checks(c: dict) -> JSONResponse:
     issues.extend(check_bs(df, ob))
     issues.extend(check_pl(df))
     issues.extend(check_tax(df))
+    # 追加チェック（カテゴリ1〜5）
+    try: issues.extend(check_completeness(df))
+    except Exception: pass
+    try: issues.extend(check_tax_detail(df))
+    except Exception: pass
+    try: issues.extend(check_assets(df))
+    except Exception: pass
+    try: issues.extend(check_ar_ap(df))
+    except Exception: pass
+    try: issues.extend(check_governance(df))
+    except Exception: pass
     if prior_df is not None:
         issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month, ob or None))
 
