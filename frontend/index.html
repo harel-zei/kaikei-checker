@@ -224,25 +224,25 @@
         <input type="file" id="f-prior_journal" accept=".csv,.txt" style="display:none" onchange="setFile(this,'prior_journal')">
       </div>
 
-      <!-- 前期末残高（主科目） -->
+      <!-- 前期首残高（主科目） -->
       <div class="dz prior" id="z-prior_bal_main"
            ondragover="dov(event,'z-prior_bal_main')" ondragleave="dol('z-prior_bal_main')" ondrop="odrop(event,'prior_bal_main')"
            onclick="document.getElementById('f-prior_bal_main').click()">
         <span class="opt opt-opt">任意</span>
         <div class="icon">📊</div>
-        <div class="title" id="l-prior_bal_main">前期末残高 CSV</div>
-        <div class="hint">前期末の試算表（主科目）<br>BS前年同月比較に使用</div>
+        <div class="title" id="l-prior_bal_main">前期首残高 CSV</div>
+        <div class="hint">前期の期首残高試算表（主科目）<br>BS前年同月比較に使用</div>
         <input type="file" id="f-prior_bal_main" accept=".csv,.txt" style="display:none" onchange="setFile(this,'prior_bal_main')">
       </div>
 
-      <!-- 前期末補助残高 -->
+      <!-- 前期首補助残高 -->
       <div class="dz prior" id="z-prior_bal_sub"
            ondragover="dov(event,'z-prior_bal_sub')" ondragleave="dol('z-prior_bal_sub')" ondrop="odrop(event,'prior_bal_sub')"
            onclick="document.getElementById('f-prior_bal_sub').click()">
         <span class="opt opt-opt">任意</span>
         <div class="icon">📋</div>
-        <div class="title" id="l-prior_bal_sub">前期末補助残高 CSV</div>
-        <div class="hint">前期末の補助元帳残高<br>補助科目別BS比較に使用</div>
+        <div class="title" id="l-prior_bal_sub">前期首補助残高 CSV</div>
+        <div class="hint">前期の期首補助元帳残高<br>補助科目別BS比較に使用</div>
         <input type="file" id="f-prior_bal_sub" accept=".csv,.txt" style="display:none" onchange="setFile(this,'prior_bal_sub')">
       </div>
     </div>
@@ -250,8 +250,8 @@
     <div class="fmt-guide" style="margin-bottom:0;">
       <strong>📌 前期比較の仕組み</strong><br>
       ① 前期仕訳帳のみ → <strong>PL科目の前年同月比較</strong>（売上・仕入・給与など月次金額を比較）<br>
-      ② 前期仕訳帳 ＋ 前期末残高 → ① に加えて <strong>BS科目の前年同月末残高比較</strong>（売掛金・買掛金など）<br>
-      前期末残高のフォーマットは当期期首残高と同じです。
+      ② 前期仕訳帳 ＋ 前期首残高 → ① に加えて <strong>BS科目の前年同月末残高比較</strong>（売掛金・買掛金など）<br>
+      ※ 前期首残高とは、前期の期首（前年度の開始時点）の残高です。フォーマットは当期期首残高と同じです。
     </div>
   </div>
 
