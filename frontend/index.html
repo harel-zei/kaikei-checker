@@ -272,7 +272,7 @@
       <div class="title" id="dropTitle">当期仕訳帳CSVをドロップ、またはクリックして選択</div>
       <div class="hint">
         <strong>当期仕訳帳のみ</strong>でOKです（弥生 / freee / MoneyForward）<br>
-        <span style="color:#059669;">✅ 当期首残高は、クライアントに保存した前期試算表から自動導出されます</span>
+        <span style="color:#059669;">✅ 当期首残高は前期データから自動導出されます（別途アップロード不要）</span>
       </div>
       <input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none"
              onchange="addFiles(this.files)">
@@ -487,15 +487,14 @@
     const hasSome = clientHasPrior.journal || clientHasPrior.bal_main || clientHasPrior.bal_sub;
     const hint = document.querySelector('#dropZone .hint');
     if (hasAll) {
-      hint.innerHTML = '当期仕訳帳・当期首試算表・当期首補助残高（順番不問）<br>'
+      hint.innerHTML = '<strong>当期仕訳帳のみ</strong>でOKです（順番不問）<br>'
         + '<span style="color:#059669;">✅ 前期データはすべて自動読み込みされます</span>';
     } else if (hasSome) {
       hint.innerHTML = '当期ファイル + 不足している前期ファイルもドロップしてください<br>'
         + '<span style="color:#d97706;">⚠️ 一部の前期データが未保存です</span>';
     } else {
-      hint.innerHTML = '当期ファイルを1〜3個まとめてアップロードしてください（順番・個数不問）<br>'
-        + '<strong>当期仕訳帳</strong>・<strong>当期首試算表</strong>・<strong>当期首補助残高</strong><br>'
-        + '<span style="color:#059669;">✅ クライアントを選択すると、前期データは自動読み込みされます</span>';
+      hint.innerHTML = '<strong>当期仕訳帳のみ</strong>でOKです（順番不問）<br>'
+        + '<span style="color:#059669;">✅ クライアントを選択すると前期データは自動読み込みされます</span>';
     }
   }
 
