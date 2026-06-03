@@ -207,12 +207,21 @@ def _check_single_account(
 
     # ① マイナス残高
     if final_balance < -1000:
+        # 科目に応じてメッセージを変える
+        if "買掛金" in base_acc or "未払金" in base_acc or "未払費用" in base_acc:
+            extra = (
+                "支払超過または消込誤りの可能性があります。"
+                "また、仕入・費用の計上漏れにより残高がマイナスになっているケースもありますので、"
+                "仕入先への請求書・納品書と照合してください。"
+            )
+        else:
+            extra = "回収超過または消込誤りの可能性があります。補助元帳を確認してください。"
         issues.append({
             "level": "error", "category": "BS", "account": label,
             "month": str(last_month),
             "message": (
                 f"【要修正】{label} の {last_month} 時点の残高が {final_balance:,.0f}円 とマイナスです。"
-                "消込超過または仕訳の誤入力の可能性があります。補助元帳を確認してください。"
+                + extra
             ),
         })
         return
