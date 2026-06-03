@@ -85,7 +85,7 @@ def _compare_pl_cumulative(
                     "current":    float(curr_total),
                     "prior":      float(prev_total),
                     "change_pct": float(pct),
-                    "months":     common_months,
+                    "months":     [int(m) for m in common_months],
                 },
             })
 
