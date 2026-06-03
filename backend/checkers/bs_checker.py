@@ -130,41 +130,68 @@ def _check_single_account(
     ob: dict,
     normal_side: str,
 ) -> None:
-    """1つの科目（補助科目）の残高を計算して異常を検出"""
+    """
+    1つの科目（補助科目）の月次残高を計算して異常を検出する。
+
+    フラグを立てる条件:
+    ① マイナス残高 → Error（消込超過・誤入力）
+    ② 2ヶ月以上残高が滞留している → Warning（長期未回収・未払）
+       ※「翌月回収」のような正常サイクルは除外する
+    残高0、または毎月回収できている場合はフラグなし。
+    """
     label   = f"{base_acc}（{sub}）" if sub else base_acc
     opening = ob.get(label) if ob.get(label) is not None else ob.get(base_acc)
     if opening is None:
-        opening = 0.0  # 売掛金・買掛金は期首残高なしでも当期増減を計算
+        opening = 0.0
 
     d_rows = df[df["debit_account"].astype(str).str.contains(base_acc, na=False)]
     c_rows = df[df["credit_account"].astype(str).str.contains(base_acc, na=False)]
     d_sub, c_sub = _filter_sub(d_rows, c_rows, sub)
 
-    d_total = d_sub["debit_amount"].sum()
-    c_total = c_sub["credit_amount"].sum()
+    if d_sub.empty and c_sub.empty:
+        return
 
-    if normal_side == "debit":
-        balance = opening + d_total - c_total   # 売掛金：借方増加・貸方減少
-    else:
-        balance = opening + c_total - d_total   # 買掛金：貸方増加・借方減少
+    # 月次残高を計算
+    period = df["date"].dt.to_period("M")
+    monthly_d = d_sub.groupby(period.loc[d_sub.index])["debit_amount"].sum()
+    monthly_c = c_sub.groupby(period.loc[c_sub.index])["credit_amount"].sum()
 
-    # ① マイナス残高（回収過多・支払過多 → 誤入力の可能性）
-    if balance < -1000:
+    all_periods = monthly_d.index.union(monthly_c.index).sort_values()
+    if all_periods.empty:
+        return
+
+    # 月末残高を積み上げ
+    monthly_bal = {}
+    running = opening
+    for p in all_periods:
+        running += monthly_d.get(p, 0) - monthly_c.get(p, 0) if normal_side == "debit" \
+              else monthly_c.get(p, 0) - monthly_d.get(p, 0)
+        monthly_bal[p] = running
+
+    final_balance = list(monthly_bal.values())[-1]
+
+    # ① マイナス残高（消込超過・誤入力）
+    if final_balance < -1000:
         issues.append({
-            "level": "error", "category": "BS", "account": label, "month": "全期間",
+            "level": "error", "category": "BS", "account": label,
+            "month": str(list(monthly_bal.keys())[-1]),
             "message": (
-                f"【要修正】{label} の残高が {balance:,.0f}円 とマイナスになっています。"
+                f"【要修正】{label} の残高が {final_balance:,.0f}円 とマイナスになっています。"
                 "消込超過または仕訳の誤入力の可能性があります。補助元帳を確認してください。"
             ),
         })
-    # ② 残高あり（確認が必要）
-    elif abs(balance) > 1000:
+        return
+
+    # ② 滞留チェック：2ヶ月以上連続して残高が減少していない月を検出
+    stale_months = _detect_stale_balance(monthly_bal, threshold=1000, stale_months=2)
+    for stale_month, stale_bal in stale_months:
         issues.append({
-            "level": "info", "category": "BS", "account": label, "month": "全期間",
+            "level": "warning", "category": "BS", "account": label,
+            "month": str(stale_month),
             "message": (
-                f"【確認】{label} の残高は {balance:,.0f}円 です。"
-                "未回収・未払の内訳が正しいか補助元帳で確認してください。"
-                "分割回収や振込手数料差引による残高ズレがないかも確認が必要です。"
+                f"【要確認】{label} の残高 {stale_bal:,.0f}円 が"
+                f" {stale_month} 時点で2ヶ月以上動いていません。"
+                "回収遅延または未払の可能性があります。補助元帳を確認してください。"
             ),
         })
 
@@ -261,6 +288,52 @@ def _check_loan_repayment(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # ────────────────────────────────────────────────
 # ユーティリティ
 # ────────────────────────────────────────────────
+def _detect_stale_balance(
+    monthly_bal: dict,
+    threshold: float = 1000,
+    stale_months: int = 2,
+) -> list:
+    """
+    月次残高辞書を受け取り、「N ヶ月以上残高が減少していない」月を返す。
+
+    正常サイクル（翌月回収）の例:
+      12月: 175,384 → 1月: 0 → 1月: 296,054 → 2月: 0  ← フラグなし
+
+    滞留の例:
+      12月: 500,000 → 1月: 500,000 → 2月: 500,000  ← フラグ
+
+    Returns: [(period, balance), ...]  最初に滞留が確認された月のみ返す
+    """
+    items   = list(monthly_bal.items())
+    flagged = []
+    consecutive = 0
+    prev_bal = None
+    flagged_start = None
+
+    for period, bal in items:
+        if bal <= threshold:
+            # 残高がほぼ0になった → リセット
+            consecutive = 0
+            prev_bal    = None
+            flagged_start = None
+            continue
+
+        if prev_bal is not None and bal >= prev_bal * 0.95:
+            # 前月より残高がほとんど減っていない（5%未満の減少は誤差として許容しない）
+            consecutive += 1
+            if consecutive >= stale_months and flagged_start is None:
+                flagged_start = period
+                flagged.append((period, bal))
+        else:
+            # 残高が減少した → リセット
+            consecutive   = 0
+            flagged_start = None
+
+        prev_bal = bal
+
+    return flagged
+
+
 def _collect_subs(d_rows: pd.DataFrame, c_rows: pd.DataFrame, df: pd.DataFrame) -> set:
     """借方・貸方の行から補助科目の一覧を収集する"""
     subs = set()
