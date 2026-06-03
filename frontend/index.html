@@ -14,66 +14,65 @@
       display: flex; align-items: center; gap: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
-    header h1    { font-size: 1.4rem; font-weight: 700; }
-    header .sub  { font-size: 0.83rem; opacity: 0.8; margin-top: 2px; }
+    header h1   { font-size: 1.4rem; font-weight: 700; }
+    header .sub { font-size: 0.83rem; opacity: 0.8; margin-top: 2px; }
 
-    .container { max-width: 1040px; margin: 0 auto; padding: 28px 16px; }
+    .container { max-width: 860px; margin: 0 auto; padding: 28px 16px; }
 
-    /* ── カード ── */
     .card {
       background: white; border-radius: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-      padding: 22px 26px; margin-bottom: 20px;
+      padding: 24px 28px; margin-bottom: 20px;
     }
-    .card-title {
-      font-size: 0.95rem; font-weight: 700; margin-bottom: 16px;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .tag-current { background: #dbeafe; color: #1e40af; border-radius: 6px; padding: 2px 10px; font-size: 0.78rem; }
-    .tag-prior   { background: #fce7f3; color: #9d174d; border-radius: 6px; padding: 2px 10px; font-size: 0.78rem; }
+    .card-title { font-size: 1rem; font-weight: 700; margin-bottom: 16px; color: #1e429f; }
 
-    /* ── ドロップゾーン グリッド ── */
-    .dz-grid-3 {
-      display: grid; grid-template-columns: 1.5fr 1fr 1fr;
-      gap: 14px; margin-bottom: 14px;
+    /* ── 大きなドロップゾーン ── */
+    .drop-main {
+      border: 2px dashed #93c5fd; border-radius: 12px;
+      padding: 40px 24px; text-align: center; cursor: pointer;
+      transition: all 0.2s; background: #f8faff; margin-bottom: 16px;
     }
-    .dz-grid-2 {
-      display: grid; grid-template-columns: 1.5fr 1fr 1fr;
-      gap: 14px; margin-bottom: 14px;
-    }
-    @media (max-width: 680px) {
-      .dz-grid-3, .dz-grid-2 { grid-template-columns: 1fr; }
-    }
+    .drop-main:hover, .drop-main.over { border-color: #1a56db; background: #eff6ff; }
+    .drop-main.has-files { border-color: #059669; background: #f0fdf4; }
+    .drop-main .icon  { font-size: 2.6rem; margin-bottom: 10px; }
+    .drop-main .title { font-size: 1.05rem; font-weight: 600; color: #1a56db; margin-bottom: 6px; }
+    .drop-main.has-files .title { color: #059669; }
+    .drop-main .hint  { font-size: 0.85rem; color: #6b7280; line-height: 1.7; }
 
-    .dz {
-      border: 2px dashed #93c5fd; border-radius: 10px;
-      padding: 18px 12px; text-align: center; cursor: pointer;
-      transition: all 0.2s; background: #f8faff; position: relative; min-height: 110px;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    /* ファイルリスト */
+    .file-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .file-item {
+      display: flex; align-items: center; gap: 10px;
+      background: #f8faff; border: 1px solid #dbeafe;
+      border-radius: 8px; padding: 8px 14px; font-size: 0.85rem;
     }
-    .dz:hover, .dz.over  { border-color: #1a56db; background: #eff6ff; }
-    .dz.done             { border-color: #059669; background: #f0fdf4; }
-    .dz.prior            { border-color: #f9a8d4; background: #fdf2f8; }
-    .dz.prior:hover,.dz.prior.over { border-color: #db2777; background: #fce7f3; }
-    .dz.prior.done       { border-color: #059669; background: #f0fdf4; }
+    .file-item .name   { flex: 1; color: #1e40af; font-weight: 500; }
+    .file-item .badge  { font-size: 0.72rem; padding: 2px 8px; border-radius: 8px; font-weight: 600; white-space: nowrap; }
+    .badge-journal  { background: #dbeafe; color: #1e40af; }
+    .badge-bal-main { background: #dcfce7; color: #166534; }
+    .badge-bal-sub  { background: #fef9c3; color: #854d0e; }
+    .badge-current  { background: #e0f2fe; color: #075985; }
+    .badge-prior    { background: #fce7f3; color: #9d174d; }
+    .badge-unknown  { background: #f3f4f6; color: #6b7280; }
+    .file-item .remove { cursor: pointer; color: #9ca3af; font-size: 1rem; line-height: 1; }
+    .file-item .remove:hover { color: #dc2626; }
 
-    .dz .opt { position: absolute; top: 7px; right: 8px; font-size: 0.68rem; padding: 1px 7px; border-radius: 8px; font-weight: 500; }
-    .opt-req  { background: #fef3c7; color: #92400e; }
-    .opt-opt  { background: #f3f4f6; color: #6b7280; }
-
-    .dz .icon  { font-size: 1.7rem; }
-    .dz .title { font-size: 0.85rem; font-weight: 600; color: #1a56db; }
-    .dz.prior .title { color: #be185d; }
-    .dz.done .title  { color: #059669; }
-    .dz .hint  { font-size: 0.76rem; color: #6b7280; line-height: 1.5; }
-
-    /* 期首残高フォーマット説明 */
-    .fmt-guide {
-      background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
-      padding: 11px 15px; font-size: 0.81rem; color: #92400e; line-height: 1.75; margin-bottom: 16px;
+    /* 説明 */
+    .guide {
+      background: #fffbeb; border: 1px solid #fde68a;
+      border-radius: 8px; padding: 12px 16px;
+      font-size: 0.82rem; color: #92400e; line-height: 1.75; margin-bottom: 16px;
     }
-    .fmt-guide strong { color: #78350f; }
-    .fmt-guide code { background: #fef3c7; padding: 1px 6px; border-radius: 4px; font-family: monospace; font-size: 0.79rem; }
+    .guide strong { color: #78350f; }
+
+    /* 振り分け結果ログ */
+    .log-box {
+      background: #f8faff; border: 1px solid #dbeafe;
+      border-radius: 8px; padding: 12px 16px;
+      font-size: 0.8rem; color: #374151; line-height: 1.8;
+      margin-bottom: 14px; display: none;
+    }
+    .log-box.show { display: block; }
 
     /* ボタン */
     .btn { padding: 10px 26px; border-radius: 8px; font-size: 0.93rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
@@ -82,30 +81,29 @@
     .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
     .btn-secondary { background: #f3f4f6; color: #374151; }
     .btn-secondary:hover  { background: #e5e7eb; }
-    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 
     /* サマリー */
-    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
     .sc { background: white; border-radius: 10px; padding: 16px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-    .sc .n  { font-size: 2.3rem; font-weight: 700; line-height: 1; }
-    .sc .lbl{ font-size: 0.8rem; color: #6b7280; margin-top: 5px; }
-    .c-err .n  { color: #dc2626; } .c-wrn .n { color: #d97706; }
-    .c-inf .n  { color: #2563eb; } .c-tot .n  { color: #059669; }
+    .sc .n   { font-size: 2.2rem; font-weight: 700; line-height: 1; }
+    .sc .lbl { font-size: 0.8rem; color: #6b7280; margin-top: 5px; }
+    .c-err .n { color: #dc2626; } .c-wrn .n { color: #d97706; }
+    .c-inf .n { color: #2563eb; } .c-tot .n { color: #059669; }
 
-    /* フィルタータブ */
+    /* フィルタ */
     .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-    .tab  { padding: 5px 14px; border-radius: 20px; font-size: 0.83rem; cursor: pointer; border: 2px solid transparent; font-weight: 500; transition: all 0.15s; }
+    .tab  { padding: 5px 14px; border-radius: 20px; font-size: 0.83rem; cursor: pointer; border: 2px solid transparent; font-weight: 500; }
     .tab.all     { background: #f3f4f6; color: #374151; }
     .tab.error   { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
     .tab.warning { background: #fffbeb; color: #d97706; border-color: #fde68a; }
     .tab.info    { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
     .tab.yoy     { background: #f5f3ff; color: #7c3aed; border-color: #ddd6fe; }
-    .tab.active { font-weight: 700; }
-    .tab.active.all     { border-color: #9ca3af; }
-    .tab.active.error   { border-color: #dc2626; }
-    .tab.active.warning { border-color: #d97706; }
-    .tab.active.info    { border-color: #2563eb; }
-    .tab.active.yoy     { border-color: #7c3aed; }
+    .tab.active.all     { border-color: #9ca3af; font-weight: 700; }
+    .tab.active.error   { border-color: #dc2626; font-weight: 700; }
+    .tab.active.warning { border-color: #d97706; font-weight: 700; }
+    .tab.active.info    { border-color: #2563eb; font-weight: 700; }
+    .tab.active.yoy     { border-color: #7c3aed; font-weight: 700; }
 
     /* 指摘カード */
     .issues { display: flex; flex-direction: column; gap: 10px; }
@@ -116,8 +114,8 @@
     .ic-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 2px; }
     .ic-body { flex: 1; }
     .ic-head { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 5px; }
-    .badge { padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; }
-    .b-error { background: #fef2f2; color: #dc2626; }
+    .bdg { padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; }
+    .b-error   { background: #fef2f2; color: #dc2626; }
     .b-warning { background: #fffbeb; color: #d97706; }
     .b-info    { background: #eff6ff; color: #2563eb; }
     .b-cat  { background: #f3f4f6; color: #374151; }
@@ -125,21 +123,19 @@
     .b-mon  { background: #faf5ff; color: #6b21a8; }
     .ic-msg { font-size: 0.88rem; line-height: 1.65; color: #374151; }
 
-    /* メタ情報 */
     .meta { background: white; border-radius: 10px; padding: 11px 16px; margin-bottom: 16px; font-size: 0.85rem; color: #6b7280; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
     .meta strong { color: #374151; }
-    .bg { border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
-    .bg-g { background: #f0fdf4; color: #059669; }
-    .bg-r { background: #fef2f2; color: #dc2626; }
-    .bg-p { background: #f5f3ff; color: #7c3aed; }
+    .bg-g { background: #f0fdf4; color: #059669; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
+    .bg-r { background: #fef2f2; color: #dc2626; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
+    .bg-p { background: #f5f3ff; color: #7c3aed; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
 
-    /* ローディング */
     .loading { text-align: center; padding: 48px; display: none; }
     .spinner { width: 44px; height: 44px; border: 4px solid #e5e7eb; border-top-color: #1a56db; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .empty { text-align: center; padding: 52px 32px; color: #9ca3af; }
     .empty .icon { font-size: 3.5rem; margin-bottom: 12px; }
     #results { display: none; }
+    .count-badge { background: #1a56db; color: white; border-radius: 12px; padding: 1px 9px; font-size: 0.78rem; font-weight: 700; margin-left: 6px; }
   </style>
 </head>
 <body>
@@ -154,169 +150,138 @@
 
 <div class="container">
 
-  <!-- ── 当期グループ ── -->
   <div class="card">
-    <div class="card-title">
-      <span class="tag-current">当期</span>
-      アップロードファイル
+    <div class="card-title">📂 ファイルをアップロード（最大6ファイル）</div>
+
+    <!-- 大きなドロップゾーン -->
+    <div class="drop-main" id="dropZone"
+         ondragover="onOver(event)" ondragleave="onLeave()" ondrop="onDrop(event)"
+         onclick="document.getElementById('fileInput').click()">
+      <div class="icon">📁</div>
+      <div class="title" id="dropTitle">ファイルをまとめてドロップ、またはクリックして選択</div>
+      <div class="hint">
+        以下のファイルを1〜6個まとめてアップロードできます（順番・個数不問）<br>
+        <strong>当期仕訳帳</strong>・<strong>前期仕訳帳</strong>・<strong>当期首試算表</strong>・<strong>前期首試算表</strong>・<strong>当期首補助残高</strong>・<strong>前期首補助残高</strong>
+      </div>
+      <input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none"
+             onchange="addFiles(this.files)">
     </div>
 
-    <div class="dz-grid-3">
-      <!-- 当期仕訳帳 -->
-      <div class="dz" id="z-journal"
-           ondragover="dov(event,'z-journal')" ondragleave="dol('z-journal')" ondrop="odrop(event,'journal')"
-           onclick="document.getElementById('f-journal').click()">
-        <span class="opt opt-req">必須</span>
-        <div class="icon">📄</div>
-        <div class="title" id="l-journal">当期 仕訳帳 CSV</div>
-        <div class="hint">弥生 / freee / MoneyForward</div>
-        <input type="file" id="f-journal" accept=".csv,.txt" style="display:none" onchange="setFile(this,'journal')">
-      </div>
+    <!-- 選択済みファイルリスト -->
+    <div class="file-list" id="fileList"></div>
 
-      <!-- 当期期首残高（主科目） -->
-      <div class="dz" id="z-ob_main"
-           ondragover="dov(event,'z-ob_main')" ondragleave="dol('z-ob_main')" ondrop="odrop(event,'ob_main')"
-           onclick="document.getElementById('f-ob_main').click()">
-        <span class="opt opt-opt">任意</span>
-        <div class="icon">📊</div>
-        <div class="title" id="l-ob_main">期首残高 CSV</div>
-        <div class="hint">残高試算表（主科目）<br>マイナス残高チェック用</div>
-        <input type="file" id="f-ob_main" accept=".csv,.txt" style="display:none" onchange="setFile(this,'ob_main')">
-      </div>
-
-      <!-- 当期期首補助残高 -->
-      <div class="dz" id="z-ob_sub"
-           ondragover="dov(event,'z-ob_sub')" ondragleave="dol('z-ob_sub')" ondrop="odrop(event,'ob_sub')"
-           onclick="document.getElementById('f-ob_sub').click()">
-        <span class="opt opt-opt">任意</span>
-        <div class="icon">📋</div>
-        <div class="title" id="l-ob_sub">期首補助残高 CSV</div>
-        <div class="hint">補助元帳残高一覧<br>口座・取引先別チェック用</div>
-        <input type="file" id="f-ob_sub" accept=".csv,.txt" style="display:none" onchange="setFile(this,'ob_sub')">
-      </div>
+    <!-- 残高CSVガイド -->
+    <div class="guide">
+      <strong>📌 残高CSV（試算表・補助残高）のフォーマット</strong><br>
+      弥生の「残高試算表」「補助残高一覧表」エクスポートをそのままアップロードできます。<br>
+      手入力の場合: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">勘定科目, 補助科目, 期首残高</code>（例: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">普通預金, 永和信用金庫・梅田, 5000000</code>）
     </div>
 
-    <!-- 残高CSVフォーマット説明 -->
-    <div class="fmt-guide">
-      <strong>📌 残高CSV のフォーマット（弥生「残高試算表」エクスポートをそのまま利用できます）</strong><br>
-      <strong>主科目残高：</strong> <code>勘定科目, , 期首残高</code> 例: <code>現金,,319541</code><br>
-      <strong>補助残高：</strong> <code>勘定科目, 補助科目, 期首残高</code> 例: <code>普通預金,永和信用金庫・梅田,5000000</code><br>
-      両方を1ファイルにまとめてもOKです。補助科目単位で口座別マイナス残高チェックが可能になります。
-    </div>
-  </div>
-
-  <!-- ── 前期グループ ── -->
-  <div class="card">
-    <div class="card-title">
-      <span class="tag-prior">前期</span>
-      前年同月比較用ファイル（すべて任意）
-    </div>
-
-    <div class="dz-grid-2">
-      <!-- 前期仕訳帳 -->
-      <div class="dz prior" id="z-prior_journal"
-           ondragover="dov(event,'z-prior_journal')" ondragleave="dol('z-prior_journal')" ondrop="odrop(event,'prior_journal')"
-           onclick="document.getElementById('f-prior_journal').click()">
-        <span class="opt opt-opt">任意</span>
-        <div class="icon">🗂️</div>
-        <div class="title" id="l-prior_journal">前期 仕訳帳 CSV</div>
-        <div class="hint">前年同月PL比較に使用</div>
-        <input type="file" id="f-prior_journal" accept=".csv,.txt" style="display:none" onchange="setFile(this,'prior_journal')">
-      </div>
-
-      <!-- 前期首残高（主科目） -->
-      <div class="dz prior" id="z-prior_bal_main"
-           ondragover="dov(event,'z-prior_bal_main')" ondragleave="dol('z-prior_bal_main')" ondrop="odrop(event,'prior_bal_main')"
-           onclick="document.getElementById('f-prior_bal_main').click()">
-        <span class="opt opt-opt">任意</span>
-        <div class="icon">📊</div>
-        <div class="title" id="l-prior_bal_main">前期首残高 CSV</div>
-        <div class="hint">前期の期首残高試算表（主科目）<br>BS前年同月比較に使用</div>
-        <input type="file" id="f-prior_bal_main" accept=".csv,.txt" style="display:none" onchange="setFile(this,'prior_bal_main')">
-      </div>
-
-      <!-- 前期首補助残高 -->
-      <div class="dz prior" id="z-prior_bal_sub"
-           ondragover="dov(event,'z-prior_bal_sub')" ondragleave="dol('z-prior_bal_sub')" ondrop="odrop(event,'prior_bal_sub')"
-           onclick="document.getElementById('f-prior_bal_sub').click()">
-        <span class="opt opt-opt">任意</span>
-        <div class="icon">📋</div>
-        <div class="title" id="l-prior_bal_sub">前期首補助残高 CSV</div>
-        <div class="hint">前期の期首補助元帳残高<br>補助科目別BS比較に使用</div>
-        <input type="file" id="f-prior_bal_sub" accept=".csv,.txt" style="display:none" onchange="setFile(this,'prior_bal_sub')">
-      </div>
-    </div>
-
-    <div class="fmt-guide" style="margin-bottom:0;">
-      <strong>📌 前期比較の仕組み</strong><br>
-      ① 前期仕訳帳のみ → <strong>PL科目の前年同月比較</strong>（売上・仕入・給与など月次金額を比較）<br>
-      ② 前期仕訳帳 ＋ 前期首残高 → ① に加えて <strong>BS科目の前年同月末残高比較</strong>（売掛金・買掛金など）<br>
-      ※ 前期首残高とは、前期の期首（前年度の開始時点）の残高です。フォーマットは当期期首残高と同じです。
-    </div>
-  </div>
-
-  <!-- 実行ボタン -->
-  <div class="card" style="padding: 18px 26px;">
     <div class="btn-row">
-      <button class="btn btn-primary" id="checkBtn" onclick="runCheck()" disabled>チェック実行</button>
-      <button class="btn btn-secondary" onclick="runSample()">サンプルデータで試す</button>
+      <button class="btn btn-primary" id="checkBtn" onclick="runCheck()" disabled>
+        チェック実行
+      </button>
+      <button class="btn btn-secondary" onclick="runSample()">サンプルで試す</button>
+      <button class="btn btn-secondary" onclick="clearFiles()" id="clearBtn" style="display:none">クリア</button>
     </div>
   </div>
 
   <!-- ローディング -->
   <div class="loading" id="loading">
     <div class="spinner"></div>
-    <p>チェック中...</p>
+    <p>ファイルを解析・チェック中...</p>
   </div>
 
   <!-- 結果 -->
   <div id="results">
-    <div class="meta"  id="metaInfo"></div>
+    <!-- 振り分けログ -->
+    <div class="card" style="padding:16px 22px;">
+      <div style="font-size:0.88rem;font-weight:600;color:#374151;margin-bottom:8px;">🔍 自動振り分け結果</div>
+      <div class="log-box show" id="logBox"></div>
+    </div>
+
+    <div class="meta"   id="metaInfo"></div>
     <div class="summary-grid" id="summaryGrid"></div>
-    <div class="tabs"  id="filterTabs"></div>
+    <div class="tabs"   id="filterTabs"></div>
     <div class="issues" id="issueList"></div>
   </div>
 
 </div>
 
 <script>
-  const files = {
-    journal: null, ob_main: null, ob_sub: null,
-    prior_journal: null, prior_bal_main: null, prior_bal_sub: null,
-  };
-  const priorKeys = ['prior_journal','prior_bal_main','prior_bal_sub'];
+  const selectedFiles = [];  // { file, name }
 
-  function setFile(input, key) {
-    if (!input.files[0]) return;
-    files[key] = input.files[0];
-    document.getElementById('l-' + key).textContent = '✅ ' + input.files[0].name;
-    document.getElementById('z-' + key).classList.add('done');
-    if (key === 'journal') document.getElementById('checkBtn').disabled = false;
-  }
-  function dov(e, id) { e.preventDefault(); document.getElementById(id).classList.add('over'); }
-  function dol(id)    { document.getElementById(id).classList.remove('over'); }
-  function odrop(e, key) {
-    e.preventDefault(); dol('z-' + key);
-    if (e.dataTransfer.files[0]) {
-      files[key] = e.dataTransfer.files[0];
-      document.getElementById('l-' + key).textContent = '✅ ' + files[key].name;
-      document.getElementById('z-' + key).classList.add('done');
-      if (key === 'journal') document.getElementById('checkBtn').disabled = false;
+  // ── ファイル追加 ──
+  function addFiles(fileList) {
+    for (const f of fileList) {
+      if (selectedFiles.length >= 6) { alert('最大6ファイルまでです'); break; }
+      if (selectedFiles.find(s => s.name === f.name)) continue; // 重複スキップ
+      selectedFiles.push({ file: f, name: f.name });
     }
+    renderFileList();
   }
 
+  function removeFile(name) {
+    const idx = selectedFiles.findIndex(f => f.name === name);
+    if (idx >= 0) selectedFiles.splice(idx, 1);
+    renderFileList();
+  }
+
+  function clearFiles() {
+    selectedFiles.length = 0;
+    renderFileList();
+    document.getElementById('results').style.display = 'none';
+  }
+
+  function renderFileList() {
+    const list = document.getElementById('fileList');
+    const btn  = document.getElementById('checkBtn');
+    const clr  = document.getElementById('clearBtn');
+    const zone = document.getElementById('dropZone');
+    const ttl  = document.getElementById('dropTitle');
+    const cnt  = document.getElementById('fileInput');
+
+    if (selectedFiles.length === 0) {
+      list.innerHTML = '';
+      btn.disabled = true;
+      clr.style.display = 'none';
+      zone.classList.remove('has-files');
+      ttl.textContent = 'ファイルをまとめてドロップ、またはクリックして選択';
+      cnt.value = '';
+      return;
+    }
+
+    list.innerHTML = selectedFiles.map(f => `
+      <div class="file-item">
+        <span>📄</span>
+        <span class="name">${f.name}</span>
+        <span class="remove" onclick="removeFile('${f.name}')">✕</span>
+      </div>
+    `).join('');
+
+    btn.disabled = false;
+    clr.style.display = 'inline-block';
+    zone.classList.add('has-files');
+    ttl.textContent = `✅ ${selectedFiles.length}ファイル選択済み（クリックで追加）`;
+  }
+
+  // ── ドラッグ＆ドロップ ──
+  function onOver(e) { e.preventDefault(); document.getElementById('dropZone').classList.add('over'); }
+  function onLeave()  { document.getElementById('dropZone').classList.remove('over'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('dropZone').classList.remove('over');
+    addFiles(e.dataTransfer.files);
+  }
+
+  // ── チェック実行 ──
   async function runCheck() {
-    if (!files.journal) return alert('当期仕訳帳CSVを選択してください');
+    if (selectedFiles.length === 0) return alert('ファイルを選択してください');
     const fd = new FormData();
-    fd.append('file',           files.journal);
-    if (files.ob_main)       fd.append('ob_main',        files.ob_main);
-    if (files.ob_sub)        fd.append('ob_sub',         files.ob_sub);
-    if (files.prior_journal) fd.append('prior_journal',  files.prior_journal);
-    if (files.prior_bal_main)fd.append('prior_bal_main', files.prior_bal_main);
-    if (files.prior_bal_sub) fd.append('prior_bal_sub',  files.prior_bal_sub);
+    for (const f of selectedFiles) fd.append('files', f.file);
     showLoading();
     try {
-      const res  = await fetch('/api/check', { method: 'POST', body: fd });
+      const res  = await fetch('/api/check-auto', { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
       renderResults(data);
@@ -338,31 +303,33 @@
   }
   function hideLoading() { document.getElementById('loading').style.display = 'none'; }
 
+  // ── 結果表示 ──
   function renderResults(data) {
     hideLoading();
     const { summary, issues } = data;
 
-    const obBadge = summary.has_ob_main || summary.ob_accounts > 0
-      ? `<span class="bg bg-g">期首残高あり（${summary.ob_accounts}科目）</span>`
-      : '<span class="bg bg-r">期首残高なし</span>';
-    const priorBadge = summary.has_prior_journal
-      ? '<span class="bg bg-p">前期比較あり</span>' : '';
-    const priorBalBadge = summary.has_prior_bal
-      ? '<span class="bg bg-p">前期末残高あり</span>' : '';
+    // 振り分けログ
+    const log = summary.classification_log || [];
+    document.getElementById('logBox').innerHTML =
+      log.map(l => `<div>${l}</div>`).join('') || '<div>（ログなし）</div>';
 
+    // メタ情報
+    const obBadge    = summary.has_ob        ? `<span class="bg-g">期首残高あり（${summary.ob_accounts}科目）</span>` : '<span class="bg-r">期首残高なし</span>';
+    const priorBadge = summary.has_prior_journal ? '<span class="bg-p">前期比較あり</span>' : '';
     document.getElementById('metaInfo').innerHTML = `
       <span>📁 <strong>${summary.software}</strong></span>
       <span>📅 <strong>${summary.date_range.start} ～ ${summary.date_range.end}</strong></span>
       <span>📋 仕訳 <strong>${summary.total_entries.toLocaleString()}件</strong></span>
-      ${obBadge} ${priorBadge} ${priorBalBadge}
+      ${obBadge} ${priorBadge}
     `;
 
+    // サマリー
     const yoyCount = issues.filter(i => i.category === '前年比' || i.category === '前年比(BS)').length;
     document.getElementById('summaryGrid').innerHTML = `
       <div class="sc c-err"><div class="n">${summary.error}</div><div class="lbl">🔴 要修正</div></div>
       <div class="sc c-wrn"><div class="n">${summary.warning}</div><div class="lbl">🟡 要確認</div></div>
       <div class="sc c-inf"><div class="n">${summary.info}</div><div class="lbl">🔵 提案・確認</div></div>
-      <div class="sc c-tot"><div class="n">${summary.error + summary.warning + summary.info}</div><div class="lbl">📊 合計</div></div>
+      <div class="sc c-tot"><div class="n">${summary.error+summary.warning+summary.info}</div><div class="lbl">📊 合計</div></div>
     `;
 
     document.getElementById('filterTabs').innerHTML = `
@@ -392,10 +359,10 @@
         <div class="ic-icon">${icons[i.level] || '📌'}</div>
         <div class="ic-body">
           <div class="ic-head">
-            <span class="badge b-${i.level}">${labels[i.level] || i.level}</span>
-            <span class="badge b-cat">${i.category}</span>
-            <span class="badge b-acc">${i.account}</span>
-            <span class="badge b-mon">${i.month}</span>
+            <span class="bdg b-${i.level}">${labels[i.level] || i.level}</span>
+            <span class="bdg b-cat">${i.category}</span>
+            <span class="bdg b-acc">${i.account}</span>
+            <span class="bdg b-mon">${i.month}</span>
           </div>
           <div class="ic-msg">${i.message}</div>
         </div>
@@ -406,11 +373,9 @@
   function filt(key, el) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
-    const filtered = key === 'all'
-      ? window._issues
-      : key === 'yoy'
-        ? window._issues.filter(i => i.category === '前年比' || i.category === '前年比(BS)')
-        : window._issues.filter(i => i.level === key);
+    const filtered = key === 'all' ? window._issues
+      : key === 'yoy' ? window._issues.filter(i => ['前年比','前年比(BS)'].includes(i.category))
+      : window._issues.filter(i => i.level === key);
     renderIssues(filtered);
   }
 </script>
