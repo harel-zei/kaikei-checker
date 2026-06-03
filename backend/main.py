@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from typing import List, Optional
 
-from parsers.csv_parser import parse_csv, parse_opening_balances
+from parsers.csv_parser import parse_csv, parse_opening_balances, parse_ending_balances
 from parsers.file_detector import auto_classify_files
 from checkers.bs_checker import check_bs, estimate_last_complete_month
 from checkers.pl_checker import check_pl
@@ -218,11 +218,22 @@ async def _run_checks(c: dict) -> JSONResponse:
     if df.empty:
         raise HTTPException(400, "仕訳帳からデータを読み込めませんでした")
 
-    # 当期期首残高（主科目 + 補助をマージ）
-    ob = _merge_balances(
+    # ── 当期期首残高の導出 ──────────────────────────────────────────
+    # 優先順位:
+    # 1. 当期首残高ファイルが直接アップロードされていればそれを使う
+    # 2. なければ、前期の試算表/補助残高の「期末残高」列から自動導出
+    #    （前期末残高 = 当期首残高）
+    ob_from_current = _merge_balances(
         parse_opening_balances(c["balance_main_current"]) if c.get("balance_main_current") else {},
         parse_opening_balances(c["balance_sub_current"])  if c.get("balance_sub_current")  else {},
     )
+    ob_from_prior = _merge_balances(
+        parse_ending_balances(c["balance_main_prior"]) if c.get("balance_main_prior") else {},
+        parse_ending_balances(c["balance_sub_prior"])  if c.get("balance_sub_prior")  else {},
+    )
+    # 当期首ファイルを優先、なければ前期末から導出
+    ob = ob_from_current if ob_from_current else ob_from_prior
+    ob_source = "当期首ファイル" if ob_from_current else ("前期末から自動導出" if ob_from_prior else "なし")
 
     # 前期仕訳帳
     prior_df = None
@@ -234,7 +245,7 @@ async def _run_checks(c: dict) -> JSONResponse:
         except Exception:
             prior_df = None
 
-    # 前期首残高（主科目 + 補助をマージ）
+    # 前期首残高（YoY比較用）: 前期試算表の「前期繰越」列から取得
     prior_ob = _merge_balances(
         parse_opening_balances(c["balance_main_prior"]) if c.get("balance_main_prior") else {},
         parse_opening_balances(c["balance_sub_prior"])  if c.get("balance_sub_prior")  else {},
@@ -254,6 +265,8 @@ async def _run_checks(c: dict) -> JSONResponse:
         "yayoi_raw": "弥生会計", "yayoi": "弥生会計",
         "freee": "freee", "moneyforward": "MoneyForward",
     }
+    if ob:
+        c.setdefault("log", []).append(f"📊 当期首残高: {len(ob)}科目（{ob_source}）")
 
     return JSONResponse({
         "summary": {
@@ -263,6 +276,7 @@ async def _run_checks(c: dict) -> JSONResponse:
             "total_entries":     len(df),
             "software":          sw_labels.get(software, software),
             "has_ob":            bool(ob),
+            "ob_source":         ob_source,
             "ob_accounts":       len(ob),
             "has_prior_journal": prior_df is not None,
             "has_prior_bal":     bool(prior_ob),

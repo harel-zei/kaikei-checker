@@ -262,18 +262,17 @@
   </div>
 
   <div class="card">
-    <div class="card-title">📂 当期ファイルをアップロード（最大3ファイル）</div>
+    <div class="card-title">📂 当期ファイルをアップロード</div>
 
     <!-- 大きなドロップゾーン -->
     <div class="drop-main" id="dropZone"
          ondragover="onOver(event)" ondragleave="onLeave()" ondrop="onDrop(event)"
          onclick="document.getElementById('fileInput').click()">
-      <div class="icon">📁</div>
-      <div class="title" id="dropTitle">ファイルをまとめてドロップ、またはクリックして選択</div>
+      <div class="icon">📄</div>
+      <div class="title" id="dropTitle">当期仕訳帳CSVをドロップ、またはクリックして選択</div>
       <div class="hint">
-        当期ファイルを1〜3個まとめてアップロードしてください（順番・個数不問）<br>
-        <strong>当期仕訳帳</strong>・<strong>当期首試算表</strong>・<strong>当期首補助残高</strong><br>
-        <span style="color:#059669;">✅ クライアントを選択すると、前期データは自動読み込みされます</span>
+        <strong>当期仕訳帳のみ</strong>でOKです（弥生 / freee / MoneyForward）<br>
+        <span style="color:#059669;">✅ 当期首残高は、クライアントに保存した前期試算表から自動導出されます</span>
       </div>
       <input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none"
              onchange="addFiles(this.files)">
@@ -698,7 +697,10 @@
       log.map(l => `<div>${l}</div>`).join('') || '<div>（ログなし）</div>';
 
     // メタ情報
-    const obBadge    = summary.has_ob        ? `<span class="bg-g">期首残高あり（${summary.ob_accounts}科目）</span>` : '<span class="bg-r">期首残高なし</span>';
+    const obLabel    = summary.ob_source && summary.ob_source !== 'なし'
+      ? `期首残高あり（${summary.ob_accounts}科目・${summary.ob_source}）`
+      : `期首残高あり（${summary.ob_accounts}科目）`;
+    const obBadge    = summary.has_ob ? `<span class="bg-g">${obLabel}</span>` : '<span class="bg-r">期首残高なし</span>';
     const priorBadge = summary.has_prior_journal ? '<span class="bg-p">前期比較あり</span>' : '';
     document.getElementById('metaInfo').innerHTML = `
       <span>📁 <strong>${summary.software}</strong></span>

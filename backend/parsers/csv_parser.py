@@ -202,27 +202,44 @@ def parse_opening_balances(content: str) -> dict:
 
         # ── ① 弥生フォーマット（[明細行] 形式）──
         if len(parts) >= 1 and parts[0] == "[明細行]":
-            # 補助残高一覧表: [明細行],部門,月度,[貸借科目],勘定科目,補助科目,前期繰越,...
-            if len(parts) >= 7 and parts[3] == "[貸借科目]":
-                account = parts[4]
-                sub     = parts[5]
-                amount  = _to_num(parts[6])  # 前期繰越
+            # 月度列があるか判定
+            # 月次形式: parts[2]="12月度" など → parts[3]が分類コード
+            # 全期間形式: parts[2]が分類コード "[貸借対照表]" など
+            has_period_col = not (parts[2].startswith("[") and parts[2].endswith("]"))
+            offset = 1 if has_period_col else 0  # 月度列の有無による列ずれ
 
-                # 「指定なし」は補助科目なしの科目全体を指す
-                if sub in ("指定なし", ""):
-                    balances[account] = amount
-                else:
-                    key = f"{account}（{sub}）"
-                    balances[key] = amount
-                    sub_totals[account] = sub_totals.get(account, 0.0) + amount
+            # 分類コードの位置: 月次=parts[3], 全期間=parts[2]
+            class_code = parts[3] if has_period_col else parts[2]
 
-            # 残高試算表（主科目）: [明細行],部門,月度,[貸借対照表]/[損益計算書],勘定科目,前期繰越,...
-            elif len(parts) >= 6 and parts[3] in ("[貸借対照表]", "[損益計算書]", "[製造原価報告書]"):
-                account = parts[4]
-                amount  = _to_num(parts[5])  # 前期繰越
-                # 補助科目からの積み上げがなければ主科目として登録
-                if account not in sub_totals:
-                    balances[account] = amount
+            # 補助残高一覧表
+            if class_code == "[貸借科目]":
+                # 月次: 科目=parts[4], 補助=parts[5], 前期繰越=parts[6]
+                # 全期間: 科目=parts[3], 補助=parts[4], 前期繰越=parts[5]
+                acc_idx = 3 + offset
+                sub_idx = 4 + offset
+                amt_idx = 5 + offset
+                if len(parts) > amt_idx:
+                    account = parts[acc_idx]
+                    sub     = parts[sub_idx]
+                    amount  = _to_num(parts[amt_idx])  # 前期繰越
+                    if sub in ("指定なし", ""):
+                        balances[account] = amount
+                    else:
+                        key = f"{account}（{sub}）"
+                        balances[key] = amount
+                        sub_totals[account] = sub_totals.get(account, 0.0) + amount
+
+            # 残高試算表（主科目）
+            elif class_code in ("[貸借対照表]", "[損益計算書]", "[製造原価報告書]"):
+                # 月次: 科目=parts[4], 前期繰越=parts[5]
+                # 全期間: 科目=parts[3], 前期繰越=parts[4]
+                acc_idx = 3 + offset
+                amt_idx = 4 + offset
+                if len(parts) > amt_idx:
+                    account = parts[acc_idx]
+                    amount  = _to_num(parts[amt_idx])  # 前期繰越
+                    if account not in sub_totals:
+                        balances[account] = amount
             continue
 
         # ── ② シンプル形式（手入力 / 他ソフト）──
@@ -255,6 +272,75 @@ def parse_opening_balances(content: str) -> dict:
                 balances[account] = amount
 
     # 補助科目の積み上げ合計で主科目を上書き（より正確）
+    for acc, total in sub_totals.items():
+        balances[acc] = total
+
+    return balances
+
+
+def parse_ending_balances(content: str) -> dict:
+    """
+    弥生「残高試算表」または「補助残高一覧表」から**期末残高（当月残高）**を読み込む。
+    前期の試算表を渡すと → 前期末残高 = 当期首残高 として使える。
+
+    列構成（弥生）:
+    主科目: [明細行],部門,月度,[貸借対照表],科目,前期繰越,借方,貸方,期末残高,構成比
+                                                [4]   [5]     [6]  [7]  [8]
+    補助:   [明細行],部門,月度,[貸借科目],科目,補助科目,前期繰越,借方,貸方,期末残高,構成比
+                                           [4]  [5]    [6]     [7]  [8]  [9]
+
+    ※ parse_opening_balances との違い: [5]/[6] の前期繰越ではなく [8]/[9] の期末残高を使う
+    """
+    balances: dict = {}
+    sub_totals: dict = {}
+
+    for line in content.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parts = list(next(pd.read_csv(
+                io.StringIO(line), header=None, quotechar='"'
+            ).itertuples(index=False)))
+        except Exception:
+            continue
+
+        parts = [str(p).strip().strip('"') for p in parts]
+
+        if len(parts) >= 1 and parts[0] == "[明細行]":
+            has_period_col = not (parts[2].startswith("[") and parts[2].endswith("]"))
+            offset     = 1 if has_period_col else 0
+            class_code = parts[3] if has_period_col else parts[2]
+
+            # 補助残高一覧: 期末残高
+            # 月次: 科目=4+off, 補助=5+off, 期末=9+off
+            # 全期間: 科目=3, 補助=4, 期末=8
+            if class_code == "[貸借科目]":
+                acc_idx = 3 + offset
+                sub_idx = 4 + offset
+                end_idx = 8 + offset  # 前期繰越(+0) 借方(+1) 貸方(+2) 期末(+3) → 5+3=8 or 6+3=9
+                if len(parts) > end_idx:
+                    account = parts[acc_idx]
+                    sub     = parts[sub_idx]
+                    amount  = _to_num(parts[end_idx])
+                    if sub in ("指定なし", ""):
+                        balances[account] = amount
+                    else:
+                        key = f"{account}（{sub}）"
+                        balances[key] = amount
+                        sub_totals[account] = sub_totals.get(account, 0.0) + amount
+
+            # 残高試算表（主科目）: 期末残高
+            # 月次: 科目=4+off, 期末=8+off  全期間: 科目=3, 期末=7
+            elif class_code in ("[貸借対照表]", "[損益計算書]", "[製造原価報告書]"):
+                acc_idx = 3 + offset
+                end_idx = 7 + offset
+                if len(parts) > end_idx:
+                    account = parts[acc_idx]
+                    amount  = _to_num(parts[end_idx])
+                    if account not in sub_totals:
+                        balances[account] = amount
+
     for acc, total in sub_totals.items():
         balances[acc] = total
 

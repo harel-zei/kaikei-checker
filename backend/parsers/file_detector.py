@@ -153,23 +153,51 @@ def auto_classify_files(files: list[tuple[str, str]]) -> dict:
             f"📄 {filename} → 種別:{_type_label(ftype)} 日付:{fdate.strftime('%Y/%m') if fdate else '不明'}"
         )
 
-    # 種別ごとにグループ化し、日付で当期/前期を割り当てる
+    # 仕訳帳の中で最も新しい（当期）仕訳帳の日付を特定
+    journal_files = sorted(
+        [f for f in classified if f["type"] == FILE_TYPE_JOURNAL and f["date"]],
+        key=lambda f: f["date"], reverse=True
+    )
+    current_journal_date = journal_files[0]["date"] if journal_files else None
+
+    # 種別ごとにグループ化し、当期/前期を割り当てる
     for ftype in [FILE_TYPE_JOURNAL, FILE_TYPE_BALANCE_MAIN, FILE_TYPE_BALANCE_SUB]:
         group = [f for f in classified if f["type"] == ftype]
         if not group:
             continue
 
-        # 日付でソート（新しい順）
-        group_with_date  = [f for f in group if f["date"] is not None]
-        group_no_date    = [f for f in group if f["date"] is None]
+        group_with_date = [f for f in group if f["date"] is not None]
+        group_no_date   = [f for f in group if f["date"] is None]
         group_with_date.sort(key=lambda f: f["date"], reverse=True)
 
-        # 日付あり: 最新=当期, 2番目=前期
-        combined = group_with_date + group_no_date
-        if len(combined) >= 1:
-            _assign(result, ftype, PERIOD_CURRENT, combined[0])
-        if len(combined) >= 2:
-            _assign(result, ftype, PERIOD_PRIOR,   combined[1])
+        if ftype == FILE_TYPE_JOURNAL:
+            # 仕訳帳: 最新=当期, 2番目=前期（従来通り）
+            combined = group_with_date + group_no_date
+            if len(combined) >= 1:
+                _assign(result, ftype, PERIOD_CURRENT, combined[0])
+            if len(combined) >= 2:
+                _assign(result, ftype, PERIOD_PRIOR, combined[1])
+
+        else:
+            # 残高ファイル: 2ファイルある場合は新旧で判定
+            # 1ファイルのみの場合 → 当期仕訳帳より古ければ「前期」と判定
+            combined = group_with_date + group_no_date
+            if len(combined) == 1:
+                f = combined[0]
+                if (current_journal_date and f.get("date") and
+                        f["date"] < current_journal_date):
+                    # 残高ファイルが当期仕訳より古い → 前期のファイルとして扱う
+                    _assign(result, ftype, PERIOD_PRIOR, f)
+                    result["log"].append(
+                        f"  ℹ️ {f['filename']}: 当期仕訳より古いため「前期」として振り分け"
+                        "（期末残高を当期首残高として自動導出）"
+                    )
+                else:
+                    _assign(result, ftype, PERIOD_CURRENT, f)
+            elif len(combined) >= 2:
+                _assign(result, ftype, PERIOD_CURRENT, combined[0])  # 新しい方=当期
+                _assign(result, ftype, PERIOD_PRIOR,   combined[1])  # 古い方=前期
+
         if len(combined) > 2:
             for extra in combined[2:]:
                 result["log"].append(
