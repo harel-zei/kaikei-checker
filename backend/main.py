@@ -1,9 +1,9 @@
 """
-会計データチェックシステム - FastAPI バックエンド v1.4
-6ファイル一括アップロード＆自動振り分け対応
+会計データチェックシステム - FastAPI バックエンド v1.5
+クライアント管理機能追加
 """
 from pathlib import Path
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from typing import List, Optional
@@ -14,8 +14,12 @@ from checkers.bs_checker import check_bs, estimate_last_complete_month
 from checkers.pl_checker import check_pl
 from checkers.tax_checker import check_tax
 from checkers.yoy_checker import check_yoy
+from client_store import (
+    list_clients, save_prior_files, load_prior_files,
+    get_client_info, delete_prior_file, delete_client,
+)
 
-app = FastAPI(title="会計データチェックシステム", version="1.4.0")
+app = FastAPI(title="会計データチェックシステム", version="1.5.0")
 frontend_path = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
 
@@ -42,35 +46,133 @@ async def root():
     return (frontend_path / "index.html").read_text(encoding="utf-8")
 
 
+# ═══════════════════════════════════════════════════
+# クライアント管理 API
+# ═══════════════════════════════════════════════════
+
+@app.get("/api/clients")
+async def api_list_clients():
+    """保存済みクライアント一覧を返す"""
+    return JSONResponse(list_clients())
+
+
+@app.get("/api/clients/{client_name}")
+async def api_get_client(client_name: str):
+    """クライアントの保存情報を返す"""
+    info = get_client_info(client_name)
+    if info is None:
+        raise HTTPException(404, f"クライアント '{client_name}' は見つかりません")
+    return JSONResponse(info)
+
+
+@app.post("/api/clients/{client_name}/save-prior")
+async def api_save_prior(
+    client_name: str,
+    files: List[UploadFile] = File(...),
+):
+    """前期ファイルを自動判定してクライアントに保存する"""
+    if not files:
+        raise HTTPException(400, "ファイルを選択してください")
+
+    file_data = []
+    for f in files:
+        try:
+            file_data.append((f.filename, _read(await f.read())))
+        except Exception as e:
+            raise HTTPException(400, f"{f.filename} の読み込みに失敗: {e}")
+
+    classified = auto_classify_files(file_data)
+
+    def _fname(keyword, default):
+        return next((n for n, _ in file_data if keyword in n), default)
+
+    to_save = {}
+    j = classified.get("journal_prior") or classified.get("journal_current")
+    if j:
+        to_save["prior_journal"] = (_fname("仕訳", "仕訳.txt"), j)
+
+    bm = classified.get("balance_main_prior") or classified.get("balance_main_current")
+    if bm:
+        to_save["prior_bal_main"] = (_fname("残高", "残高.txt"), bm)
+
+    bs = classified.get("balance_sub_prior") or classified.get("balance_sub_current")
+    if bs:
+        to_save["prior_bal_sub"] = (_fname("補助", "補助残高.txt"), bs)
+    elif classified.get("balance_sub_current"):
+        to_save["prior_bal_sub"] = (
+            next((n for n, _ in file_data if "補助" in n), "補助残高.txt"),
+            classified["balance_sub_current"]
+        )
+
+    if not to_save:
+        raise HTTPException(400, "保存できるファイルが見つかりませんでした")
+
+    result = save_prior_files(client_name, to_save)
+    result["log"] = classified.get("log", [])
+    return JSONResponse(result)
+
+
+@app.delete("/api/clients/{client_name}/prior/{file_key}")
+async def api_delete_prior_file(client_name: str, file_key: str):
+    """特定の前期ファイルを削除する"""
+    if delete_prior_file(client_name, file_key):
+        return JSONResponse({"status": "deleted"})
+    raise HTTPException(404, "ファイルが見つかりません")
+
+
+@app.delete("/api/clients/{client_name}")
+async def api_delete_client(client_name: str):
+    """クライアントのデータをすべて削除する"""
+    if delete_client(client_name):
+        return JSONResponse({"status": "deleted"})
+    raise HTTPException(404, "クライアントが見つかりません")
+
+
 # ── 自動振り分けエンドポイント ─────────────────────────────
 @app.post("/api/check-auto")
-async def check_auto(files: List[UploadFile] = File(...)):
+async def check_auto(
+    files:       List[UploadFile] = File(...),
+    client_name: Optional[str]    = Form(None),
+):
     """
     1〜6ファイルをまとめて受け取り、自動判定して振り分けた上でチェックを実行する。
+    client_name を指定すると、前期ファイルが未アップロードの場合に保存済みデータを自動補完する。
     """
     if not files:
         raise HTTPException(400, "ファイルを1つ以上アップロードしてください")
     if len(files) > 6:
         raise HTTPException(400, "アップロードできるファイルは最大6つです")
 
-    # 読み込み
     file_data = []
     for f in files:
         try:
-            content = _read(await f.read())
-            file_data.append((f.filename, content))
+            file_data.append((f.filename, _read(await f.read())))
         except Exception as e:
             raise HTTPException(400, f"{f.filename} の読み込みに失敗しました: {e}")
 
-    # 自動振り分け
     classified = auto_classify_files(file_data)
 
-    # 仕訳帳（当期）は必須
-    if not classified["journal_current"]:
+    # 前期データが不足している場合、保存済みクライアントデータで補完
+    if client_name:
+        stored = load_prior_files(client_name)
+        filled = []
+        for key in ["journal_prior", "balance_main_prior", "balance_sub_prior"]:
+            store_key = key.replace("journal_prior", "prior_journal") \
+                           .replace("balance_main_prior", "prior_bal_main") \
+                           .replace("balance_sub_prior", "prior_bal_sub")
+            if not classified.get(key) and stored.get(store_key):
+                classified[key] = stored[store_key]
+                filled.append(key)
+        if filled:
+            classified["log"].append(
+                f"💾 クライアント「{client_name}」の保存済み前期データを自動読み込み: "
+                + ", ".join(filled)
+            )
+
+    if not classified.get("journal_current"):
         raise HTTPException(400,
             "仕訳帳ファイルが見つかりませんでした。"
-            "弥生会計の仕訳帳CSVを含めてください。\n"
-            f"振り分け結果: {chr(10).join(classified['log'])}"
+            "弥生会計の仕訳帳CSVを含めてください。"
         )
 
     return await _run_checks(classified)

@@ -129,6 +129,23 @@
     .bg-r { background: #fef2f2; color: #dc2626; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
     .bg-p { background: #f5f3ff; color: #7c3aed; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
 
+    /* クライアント管理 */
+    .client-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+    .saved-file-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 12px; border-radius: 8px; font-size: .83rem;
+      background: #f0fdf4; border: 1px solid #bbf7d0; margin-bottom: 6px;
+    }
+    .saved-file-row.missing { background: #fef2f2; border-color: #fecaca; }
+    .saved-file-row .file-name { flex: 1; color: #166534; }
+    .saved-file-row.missing .file-name { color: #dc2626; }
+    .saved-file-row .saved-date { font-size: .75rem; color: #6b7280; }
+    .saved-file-row .del-btn {
+      font-size: .75rem; color: #9ca3af; cursor: pointer; padding: 1px 6px;
+      border-radius: 4px; border: 1px solid #e5e7eb;
+    }
+    .saved-file-row .del-btn:hover { color: #dc2626; border-color: #fecaca; }
+
     .loading { text-align: center; padding: 48px; display: none; }
     .spinner { width: 44px; height: 44px; border: 4px solid #e5e7eb; border-top-color: #1a56db; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -150,8 +167,69 @@
 
 <div class="container">
 
+  <!-- ══ クライアント選択カード ══ -->
+  <div class="card" id="clientCard">
+    <div class="card-title">🏢 クライアント選択</div>
+
+    <div class="client-row">
+      <!-- セレクトボックス -->
+      <div style="flex:1;min-width:200px;">
+        <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">保存済みクライアントから選択</label>
+        <select id="clientSelect" onchange="onClientSelect(this.value)"
+                style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;">
+          <option value="">-- 選択してください --</option>
+        </select>
+      </div>
+      <!-- または新規入力 -->
+      <div style="display:flex;align-items:center;color:#9ca3af;font-size:.85rem;padding-top:18px;">または</div>
+      <div style="flex:1;min-width:200px;">
+        <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">新規クライアント名を入力</label>
+        <input type="text" id="clientInput" placeholder="例: サンブルームコスメ株式会社"
+               oninput="onClientInput(this.value)"
+               style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;">
+      </div>
+    </div>
+
+    <!-- クライアントの保存済みデータ表示 -->
+    <div id="clientStatus" style="display:none;margin-top:14px;">
+      <div style="font-size:.82rem;color:#374151;font-weight:600;margin-bottom:8px;">💾 保存済みの前期データ</div>
+      <div id="clientStatusBody"></div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" style="font-size:.82rem;padding:6px 16px;"
+                onclick="openSaveModal()">前期データを更新</button>
+        <button class="btn" style="font-size:.82rem;padding:6px 16px;background:#fef2f2;color:#dc2626;"
+                onclick="confirmDeleteClient()">クライアントを削除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 前期データ保存モーダル ══ -->
+  <div id="saveModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:14px;padding:28px 32px;max-width:520px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18);">
+      <div style="font-size:1rem;font-weight:700;margin-bottom:16px;">💾 前期データを保存</div>
+      <p style="font-size:.85rem;color:#6b7280;margin-bottom:14px;">
+        前期の仕訳帳・残高ファイルをまとめてドロップしてください（1〜3ファイル）。<br>
+        次回以降、このクライアントを選択すると自動で読み込まれます。
+      </p>
+      <div class="drop-main" id="modalDrop" style="min-height:100px;"
+           ondragover="onOver(event,'modalDrop')" ondragleave="onLeave('modalDrop')" ondrop="onDropModal(event)"
+           onclick="document.getElementById('modalFileInput').click()">
+        <div class="icon">📁</div>
+        <div class="title" id="modalDropTitle">前期ファイルをドロップ</div>
+        <div class="hint">前期仕訳帳・前期首残高・前期首補助残高（順番不問）</div>
+        <input type="file" id="modalFileInput" accept=".csv,.txt" multiple style="display:none"
+               onchange="addModalFiles(this.files)">
+      </div>
+      <div id="modalFileList" style="margin:10px 0;"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-secondary" onclick="closeSaveModal()">キャンセル</button>
+        <button class="btn btn-primary" id="modalSaveBtn" onclick="savePriorFiles()" disabled>保存する</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
-    <div class="card-title">📂 ファイルをアップロード（最大6ファイル）</div>
+    <div class="card-title">📂 当期ファイルをアップロード（最大3ファイル）</div>
 
     <!-- 大きなドロップゾーン -->
     <div class="drop-main" id="dropZone"
@@ -160,8 +238,9 @@
       <div class="icon">📁</div>
       <div class="title" id="dropTitle">ファイルをまとめてドロップ、またはクリックして選択</div>
       <div class="hint">
-        以下のファイルを1〜6個まとめてアップロードできます（順番・個数不問）<br>
-        <strong>当期仕訳帳</strong>・<strong>前期仕訳帳</strong>・<strong>当期首試算表</strong>・<strong>前期首試算表</strong>・<strong>当期首補助残高</strong>・<strong>前期首補助残高</strong>
+        当期ファイルを1〜3個まとめてアップロードしてください（順番・個数不問）<br>
+        <strong>当期仕訳帳</strong>・<strong>当期首試算表</strong>・<strong>当期首補助残高</strong><br>
+        <span style="color:#059669;">✅ クライアントを選択すると、前期データは自動読み込みされます</span>
       </div>
       <input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none"
              onchange="addFiles(this.files)">
@@ -209,6 +288,197 @@
 </div>
 
 <script>
+  // ════════════════════════════════════
+  // クライアント管理
+  // ════════════════════════════════════
+  let currentClient = "";
+  let clientHasPrior = { journal: false, bal_main: false, bal_sub: false };
+
+  async function loadClientList() {
+    try {
+      const res  = await fetch('/api/clients');
+      const list = await res.json();
+      const sel  = document.getElementById('clientSelect');
+      sel.innerHTML = '<option value="">-- 選択してください --</option>';
+      list.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.name;
+        opt.textContent = c.name;
+        sel.appendChild(opt);
+      });
+    } catch(e) {}
+  }
+
+  async function onClientSelect(name) {
+    document.getElementById('clientInput').value = name;
+    currentClient = name;
+    if (name) await showClientStatus(name);
+    else hideClientStatus();
+  }
+
+  function onClientInput(val) {
+    currentClient = val;
+    document.getElementById('clientSelect').value = '';
+    if (!val) { hideClientStatus(); return; }
+    showClientStatus(val);
+  }
+
+  async function showClientStatus(name) {
+    try {
+      const res = await fetch(`/api/clients/${encodeURIComponent(name)}`);
+      if (!res.ok) { hideClientStatus(); return; }
+      const info = await res.json();
+      const saved = info.saved_files;
+      clientHasPrior = {
+        journal:  saved.prior_journal?.exists  || false,
+        bal_main: saved.prior_bal_main?.exists || false,
+        bal_sub:  saved.prior_bal_sub?.exists  || false,
+      };
+
+      const keys = [
+        ['prior_journal',  '前期仕訳帳'],
+        ['prior_bal_main', '前期首残高（主科目）'],
+        ['prior_bal_sub',  '前期首補助残高'],
+      ];
+      document.getElementById('clientStatusBody').innerHTML = keys.map(([k, label]) => {
+        const f = saved[k];
+        if (f?.exists) {
+          return `<div class="saved-file-row">
+            <span>✅</span>
+            <span class="file-name">${label}</span>
+            <span class="saved-date">${f.original_name} （保存日: ${f.saved_at}）</span>
+            <span class="del-btn" onclick="deletePriorFile('${name}','${k}')">削除</span>
+          </div>`;
+        } else {
+          return `<div class="saved-file-row missing">
+            <span>⬜</span>
+            <span class="file-name">${label} — 未保存</span>
+          </div>`;
+        }
+      }).join('');
+
+      document.getElementById('clientStatus').style.display = 'block';
+      updateDropHint();
+    } catch(e) {
+      hideClientStatus();
+    }
+  }
+
+  function hideClientStatus() {
+    clientHasPrior = { journal: false, bal_main: false, bal_sub: false };
+    document.getElementById('clientStatus').style.display = 'none';
+    updateDropHint();
+  }
+
+  function updateDropHint() {
+    const hasAll = clientHasPrior.journal && clientHasPrior.bal_main && clientHasPrior.bal_sub;
+    const hasSome = clientHasPrior.journal || clientHasPrior.bal_main || clientHasPrior.bal_sub;
+    const hint = document.querySelector('#dropZone .hint');
+    if (hasAll) {
+      hint.innerHTML = '当期仕訳帳・当期首試算表・当期首補助残高（順番不問）<br>'
+        + '<span style="color:#059669;">✅ 前期データはすべて自動読み込みされます</span>';
+    } else if (hasSome) {
+      hint.innerHTML = '当期ファイル + 不足している前期ファイルもドロップしてください<br>'
+        + '<span style="color:#d97706;">⚠️ 一部の前期データが未保存です</span>';
+    } else {
+      hint.innerHTML = '当期ファイルを1〜3個まとめてアップロードしてください（順番・個数不問）<br>'
+        + '<strong>当期仕訳帳</strong>・<strong>当期首試算表</strong>・<strong>当期首補助残高</strong><br>'
+        + '<span style="color:#059669;">✅ クライアントを選択すると、前期データは自動読み込みされます</span>';
+    }
+  }
+
+  async function deletePriorFile(clientName, fileKey) {
+    if (!confirm(`「${fileKey}」を削除しますか？`)) return;
+    await fetch(`/api/clients/${encodeURIComponent(clientName)}/prior/${fileKey}`, { method: 'DELETE' });
+    await showClientStatus(clientName);
+  }
+
+  async function confirmDeleteClient() {
+    if (!confirm(`クライアント「${currentClient}」のすべてのデータを削除しますか？`)) return;
+    await fetch(`/api/clients/${encodeURIComponent(currentClient)}`, { method: 'DELETE' });
+    await loadClientList();
+    hideClientStatus();
+    document.getElementById('clientInput').value = '';
+    document.getElementById('clientSelect').value = '';
+    currentClient = '';
+  }
+
+  // ─── 前期データ保存モーダル ───
+  const modalFiles = [];
+
+  function openSaveModal() {
+    modalFiles.length = 0;
+    document.getElementById('modalFileList').innerHTML = '';
+    document.getElementById('modalDropTitle').textContent = '前期ファイルをドロップ';
+    document.getElementById('modalDrop').classList.remove('has-files');
+    document.getElementById('modalSaveBtn').disabled = true;
+    document.getElementById('saveModal').style.display = 'flex';
+  }
+  function closeSaveModal() {
+    document.getElementById('saveModal').style.display = 'none';
+  }
+
+  function addModalFiles(fileList) {
+    for (const f of fileList) {
+      if (modalFiles.length >= 3) break;
+      if (!modalFiles.find(x => x.name === f.name)) modalFiles.push(f);
+    }
+    renderModalFileList();
+  }
+
+  function renderModalFileList() {
+    document.getElementById('modalFileList').innerHTML =
+      modalFiles.map(f => `<div class="file-item"><span>📄</span><span class="name">${f.name}</span></div>`).join('');
+    document.getElementById('modalSaveBtn').disabled = modalFiles.length === 0;
+    if (modalFiles.length > 0) {
+      document.getElementById('modalDropTitle').textContent = `✅ ${modalFiles.length}ファイル選択済み`;
+      document.getElementById('modalDrop').classList.add('has-files');
+    }
+  }
+
+  function onDropModal(e) {
+    e.preventDefault();
+    document.getElementById('modalDrop').classList.remove('over');
+    addModalFiles(e.dataTransfer.files);
+  }
+
+  async function savePriorFiles() {
+    if (!currentClient) { alert('クライアント名を入力してください'); return; }
+    if (modalFiles.length === 0) { alert('ファイルを選択してください'); return; }
+
+    const fd = new FormData();
+    for (const f of modalFiles) fd.append('files', f);
+
+    document.getElementById('modalSaveBtn').disabled = true;
+    document.getElementById('modalSaveBtn').textContent = '保存中...';
+
+    try {
+      const res  = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/save-prior`, {
+        method: 'POST', body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
+
+      closeSaveModal();
+      await loadClientList();
+      await showClientStatus(currentClient);
+      // セレクトボックスも更新
+      document.getElementById('clientSelect').value = currentClient;
+      alert(`✅ 保存しました（${data.saved?.length || 0}ファイル）`);
+    } catch(e) {
+      alert('エラー: ' + e.message);
+    } finally {
+      document.getElementById('modalSaveBtn').disabled = false;
+      document.getElementById('modalSaveBtn').textContent = '保存する';
+    }
+  }
+
+  // 初期化
+  loadClientList();
+
+  // ════════════════════════════════════
+  // ファイルアップロード
+  // ════════════════════════════════════
   const selectedFiles = [];  // { file, name }
 
   // ── ファイル追加 ──
@@ -279,6 +549,7 @@
     if (selectedFiles.length === 0) return alert('ファイルを選択してください');
     const fd = new FormData();
     for (const f of selectedFiles) fd.append('files', f.file);
+    if (currentClient) fd.append('client_name', currentClient);
     showLoading();
     try {
       const res  = await fetch('/api/check-auto', { method: 'POST', body: fd });
