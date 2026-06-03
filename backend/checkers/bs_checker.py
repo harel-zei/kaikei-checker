@@ -169,11 +169,12 @@ def _check_single_account(
     if sub:
         # 補助科目がある場合 → その補助科目専用の期首残高のみ使用
         # 科目合計（ob.get(base_acc)）は絶対に使わない
-        # （合計値を1社に適用するとマイナス誤検知の原因になるため）
-        opening = ob.get(label, 0.0)
+        opening = ob.get(label)
+        opening_missing = (opening is None)
+        opening = opening or 0.0
     else:
-        # 補助科目なしの場合 → 科目合計残高を使用
         opening = ob.get(base_acc, 0.0)
+        opening_missing = (base_acc not in ob)
 
     d_rows = df[df["debit_account"].astype(str).str.contains(base_acc, na=False)]
     c_rows = df[df["credit_account"].astype(str).str.contains(base_acc, na=False)]
@@ -214,6 +215,25 @@ def _check_single_account(
         return
 
     final_balance = list(check_bal.values())[-1]
+
+    # ── 期首残高が未提供で、かつ最初の月に貸方が多い場合 ──
+    # → 「期首残高が0扱いになっているため不正確な可能性」をINFOで通知
+    if opening_missing and sub:
+        first_period = list(all_periods)[0]
+        first_d = monthly_d.get(first_period, 0)
+        first_c = monthly_c.get(first_period, 0)
+        # 最初の月に貸方（回収/支払）が大きい → 期首残高があった可能性が高い
+        if (normal_side == "debit"  and first_c > first_d + 1000) or \
+           (normal_side == "credit" and first_d > first_c + 1000):
+            issues.append({
+                "level": "info", "category": "BS", "account": label, "month": str(first_period),
+                "message": (
+                    f"【期首残高未提供】{label} の期首残高が提供されていないため0円として計算しています。"
+                    f"最初の月に回収・支払が発生していることから、期首時点に残高があった可能性があります。"
+                    "「当期首補助残高CSV」をアップロードすると正確にチェックできます。"
+                ),
+            })
+        return  # 期首残高なしでマイナス/滞留の誤検知を防ぐため、以降の判定をスキップ
 
     # ① マイナス残高
     if final_balance < -1000:
