@@ -10,174 +10,118 @@
 
     header {
       background: linear-gradient(135deg, #1a56db, #1e429f);
-      color: white;
-      padding: 20px 32px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      color: white; padding: 20px 32px;
+      display: flex; align-items: center; gap: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
     header h1 { font-size: 1.4rem; font-weight: 700; }
     header .subtitle { font-size: 0.85rem; opacity: 0.8; margin-top: 2px; }
 
-    .container { max-width: 960px; margin: 0 auto; padding: 32px 16px; }
+    .container { max-width: 1000px; margin: 0 auto; padding: 32px 16px; }
 
-    /* アップロードエリア */
-    .upload-area {
-      background: white;
-      border: 2px dashed #93c5fd;
-      border-radius: 12px;
-      padding: 48px 32px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-bottom: 24px;
+    .upload-card {
+      background: white; border-radius: 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      padding: 28px 32px; margin-bottom: 24px;
     }
-    .upload-area:hover, .upload-area.dragover {
-      border-color: #1a56db;
-      background: #eff6ff;
-    }
-    .upload-icon { font-size: 3rem; margin-bottom: 12px; }
-    .upload-area h2 { font-size: 1.1rem; color: #1a56db; margin-bottom: 8px; }
-    .upload-area p { font-size: 0.9rem; color: #6b7280; }
-    #fileInput { display: none; }
+    .upload-card h2 { font-size: 1rem; font-weight: 700; color: #1e429f; margin-bottom: 18px; }
 
-    .btn {
-      display: inline-block;
-      padding: 10px 24px;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-      transition: all 0.15s;
-    }
-    .btn-primary { background: #1a56db; color: white; }
-    .btn-primary:hover { background: #1e429f; }
-    .btn-secondary { background: #e5e7eb; color: #374151; margin-left: 8px; }
-    .btn-secondary:hover { background: #d1d5db; }
-
-    /* サマリーカード */
-    .summary-grid {
+    .upload-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: 1.4fr 1fr 1fr;
+      gap: 16px; margin-bottom: 20px;
     }
-    .summary-card {
-      background: white;
-      border-radius: 10px;
-      padding: 20px;
-      text-align: center;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-    }
-    .summary-card .count { font-size: 2.5rem; font-weight: 700; line-height: 1; }
-    .summary-card .label { font-size: 0.85rem; color: #6b7280; margin-top: 6px; }
-    .card-error .count { color: #dc2626; }
-    .card-warning .count { color: #d97706; }
-    .card-info .count { color: #2563eb; }
-    .card-total .count { color: #059669; }
+    @media (max-width: 700px) { .upload-grid { grid-template-columns: 1fr; } }
 
-    /* フィルタータブ */
-    .filter-tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
+    .drop-zone {
+      border: 2px dashed #93c5fd; border-radius: 10px;
+      padding: 22px 12px; text-align: center; cursor: pointer;
+      transition: all 0.2s; background: #f8faff; position: relative;
     }
-    .tab {
-      padding: 6px 16px;
-      border-radius: 20px;
-      font-size: 0.85rem;
-      cursor: pointer;
-      border: 2px solid transparent;
-      font-weight: 500;
-      transition: all 0.15s;
+    .drop-zone:hover, .drop-zone.dragover { border-color: #1a56db; background: #eff6ff; }
+    .drop-zone.has-file  { border-color: #059669; background: #f0fdf4; }
+    .drop-zone.required  { border-color: #f59e0b; }
+    .drop-zone .icon     { font-size: 1.8rem; margin-bottom: 6px; }
+    .drop-zone .title    { font-size: 0.88rem; font-weight: 600; color: #1a56db; margin-bottom: 3px; }
+    .drop-zone .hint     { font-size: 0.78rem; color: #6b7280; line-height: 1.5; }
+    .drop-zone .opt-tag  {
+      position: absolute; top: 8px; right: 8px;
+      font-size: 0.68rem; padding: 1px 7px; border-radius: 8px;
+      background: #f3f4f6; color: #6b7280; font-weight: 500;
     }
-    .tab.all { background: #f3f4f6; color: #374151; }
-    .tab.error { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+    .drop-zone.has-file .title { color: #059669; }
+
+    /* 期首残高説明ボックス */
+    .ob-guide {
+      background: #fffbeb; border: 1px solid #fde68a;
+      border-radius: 8px; padding: 12px 16px;
+      font-size: 0.83rem; color: #92400e; margin-bottom: 18px; line-height: 1.7;
+    }
+    .ob-guide strong { color: #78350f; }
+    .ob-guide code {
+      background: #fef3c7; padding: 1px 6px; border-radius: 4px;
+      font-family: monospace; font-size: 0.8rem;
+    }
+
+    .btn { display: inline-block; padding: 10px 26px; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
+    .btn-primary   { background: #1a56db; color: white; }
+    .btn-primary:hover { background: #1e429f; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    .btn-secondary { background: #f3f4f6; color: #374151; }
+    .btn-secondary:hover { background: #e5e7eb; }
+    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; }
+
+    /* サマリー */
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .summary-card { background: white; border-radius: 10px; padding: 18px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .summary-card .count { font-size: 2.4rem; font-weight: 700; line-height: 1; }
+    .summary-card .label { font-size: 0.82rem; color: #6b7280; margin-top: 6px; }
+    .card-error .count { color: #dc2626; } .card-warning .count { color: #d97706; }
+    .card-info .count  { color: #2563eb; } .card-total .count  { color: #059669; }
+
+    /* フィルター */
+    .filter-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .tab { padding: 5px 15px; border-radius: 20px; font-size: 0.85rem; cursor: pointer; border: 2px solid transparent; font-weight: 500; transition: all 0.15s; }
+    .tab.all     { background: #f3f4f6; color: #374151; }
+    .tab.error   { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
     .tab.warning { background: #fffbeb; color: #d97706; border-color: #fde68a; }
-    .tab.info { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
-    .tab.active { font-weight: 700; border-width: 2px; }
-    .tab.all.active { border-color: #9ca3af; }
+    .tab.info    { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+    .tab.yoy     { background: #f5f3ff; color: #7c3aed; border-color: #ddd6fe; }
+    .tab.active.all     { border-color: #9ca3af; font-weight: 700; }
+    .tab.active.error   { border-color: #dc2626; font-weight: 700; }
+    .tab.active.warning { border-color: #d97706; font-weight: 700; }
+    .tab.active.info    { border-color: #2563eb; font-weight: 700; }
+    .tab.active.yoy     { border-color: #7c3aed; font-weight: 700; }
 
     /* 指摘カード */
-    .issue-list { display: flex; flex-direction: column; gap: 12px; }
-    .issue-card {
-      background: white;
-      border-radius: 10px;
-      padding: 16px 20px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-      border-left: 4px solid;
-      display: flex;
-      gap: 14px;
-      align-items: flex-start;
-    }
-    .issue-card.error { border-color: #dc2626; }
+    .issue-list { display: flex; flex-direction: column; gap: 10px; }
+    .issue-card { background: white; border-radius: 10px; padding: 14px 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid; display: flex; gap: 12px; }
+    .issue-card.error   { border-color: #dc2626; }
     .issue-card.warning { border-color: #f59e0b; }
-    .issue-card.info { border-color: #3b82f6; }
-
-    .issue-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 2px; }
+    .issue-card.info    { border-color: #3b82f6; }
+    .issue-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 2px; }
     .issue-body { flex: 1; }
-    .issue-header {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 6px;
-      flex-wrap: wrap;
-    }
-    .badge {
-      padding: 2px 10px;
-      border-radius: 12px;
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-    .badge-error { background: #fef2f2; color: #dc2626; }
-    .badge-warning { background: #fffbeb; color: #d97706; }
-    .badge-info { background: #eff6ff; color: #2563eb; }
+    .issue-header { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+    .badge { padding: 2px 9px; border-radius: 10px; font-size: 0.73rem; font-weight: 600; }
+    .badge-error    { background: #fef2f2; color: #dc2626; }
+    .badge-warning  { background: #fffbeb; color: #d97706; }
+    .badge-info     { background: #eff6ff; color: #2563eb; }
     .badge-category { background: #f3f4f6; color: #374151; }
-    .badge-account { background: #f0fdf4; color: #166534; }
-    .badge-month { background: #faf5ff; color: #6b21a8; }
+    .badge-account  { background: #f0fdf4; color: #166534; }
+    .badge-month    { background: #faf5ff; color: #6b21a8; }
+    .issue-message  { font-size: 0.9rem; line-height: 1.65; color: #374151; }
 
-    .issue-message { font-size: 0.92rem; line-height: 1.6; color: #374151; }
+    .meta-info { background: white; border-radius: 10px; padding: 12px 18px; margin-bottom: 18px; font-size: 0.87rem; color: #6b7280; display: flex; gap: 18px; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.06); align-items: center; }
+    .meta-info span strong { color: #374151; }
+    .badge-green  { background: #f0fdf4; color: #059669; border-radius: 6px; padding: 2px 9px; font-size: 0.75rem; font-weight: 600; }
+    .badge-red    { background: #fef2f2; color: #dc2626; border-radius: 6px; padding: 2px 9px; font-size: 0.75rem; font-weight: 600; }
 
-    /* ローディング */
-    .loading {
-      text-align: center;
-      padding: 48px;
-      display: none;
-    }
-    .spinner {
-      width: 48px; height: 48px;
-      border: 4px solid #e5e7eb;
-      border-top-color: #1a56db;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 16px;
-    }
+    .loading { text-align: center; padding: 48px; display: none; }
+    .spinner { width: 44px; height: 44px; border: 4px solid #e5e7eb; border-top-color: #1a56db; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .meta-info {
-      background: white;
-      border-radius: 10px;
-      padding: 14px 20px;
-      margin-bottom: 20px;
-      font-size: 0.88rem;
-      color: #6b7280;
-      display: flex;
-      gap: 24px;
-      flex-wrap: wrap;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
-    .meta-info span strong { color: #374151; }
-
-    .empty-state {
-      text-align: center;
-      padding: 64px 32px;
-      color: #9ca3af;
-    }
-    .empty-state .icon { font-size: 4rem; margin-bottom: 16px; }
-
+    .empty-state { text-align: center; padding: 56px 32px; color: #9ca3af; }
+    .empty-state .icon { font-size: 3.5rem; margin-bottom: 14px; }
     #results { display: none; }
   </style>
 </head>
@@ -187,22 +131,61 @@
   <div>📊</div>
   <div>
     <h1>会計データチェックシステム</h1>
-    <div class="subtitle">BS・PL・消費税の自動チェック | 弥生・freee・MoneyForward 対応</div>
+    <div class="subtitle">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
   </div>
 </header>
 
 <div class="container">
+  <div class="upload-card">
+    <h2>📂 ファイルをアップロード</h2>
 
-  <!-- アップロードエリア -->
-  <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-    <div class="upload-icon">📂</div>
-    <h2>CSVファイルをドロップ、またはクリックして選択</h2>
-    <p>弥生会計 / freee / MoneyForward のエクスポートCSVに対応</p>
-    <p style="margin-top:16px;">
-      <button class="btn btn-primary" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">ファイルを選択</button>
-      <button class="btn btn-secondary" onclick="event.stopPropagation(); runSample()">サンプルデータで試す</button>
-    </p>
-    <input type="file" id="fileInput" accept=".csv" onchange="handleFile(this.files[0])">
+    <div class="upload-grid">
+      <!-- 当期仕訳帳（必須） -->
+      <div class="drop-zone required" id="z-journal"
+           ondragover="dov(event,'z-journal')" ondragleave="dol('z-journal')" ondrop="odrop(event,'journal')"
+           onclick="document.getElementById('f-journal').click()">
+        <div class="opt-tag">必須</div>
+        <div class="icon">📄</div>
+        <div class="title" id="l-journal">仕訳帳 CSV をドロップ</div>
+        <div class="hint">弥生 / freee / MoneyForward</div>
+        <input type="file" id="f-journal" accept=".csv,.txt" style="display:none" onchange="setFile(this,'journal')">
+      </div>
+
+      <!-- 期首残高CSV（任意） -->
+      <div class="drop-zone" id="z-ob"
+           ondragover="dov(event,'z-ob')" ondragleave="dol('z-ob')" ondrop="odrop(event,'ob')"
+           onclick="document.getElementById('f-ob').click()">
+        <div class="opt-tag">任意</div>
+        <div class="icon">📊</div>
+        <div class="title" id="l-ob">期首残高 CSV をドロップ</div>
+        <div class="hint">試算表 or 補助残高一覧<br>（マイナス残高チェック用）</div>
+        <input type="file" id="f-ob" accept=".csv,.txt" style="display:none" onchange="setFile(this,'ob')">
+      </div>
+
+      <!-- 前期仕訳帳CSV（任意） -->
+      <div class="drop-zone" id="z-prior"
+           ondragover="dov(event,'z-prior')" ondragleave="dol('z-prior')" ondrop="odrop(event,'prior')"
+           onclick="document.getElementById('f-prior').click()">
+        <div class="opt-tag">任意</div>
+        <div class="icon">🗂️</div>
+        <div class="title" id="l-prior">前期仕訳帳 CSV をドロップ</div>
+        <div class="hint">前年同月比較に使用</div>
+        <input type="file" id="f-prior" accept=".csv,.txt" style="display:none" onchange="setFile(this,'prior')">
+      </div>
+    </div>
+
+    <!-- 期首残高CSV フォーマット説明 -->
+    <div class="ob-guide">
+      <strong>📌 期首残高CSVの形式（弥生の「残高試算表」エクスポートをそのままご利用いただけます）</strong><br>
+      補助科目がある場合は <code>勘定科目, 補助科目, 期首残高</code> の3列で作成してください。<br>
+      例：<code>普通預金, 永和信用金庫・梅田, 5000000</code>　／　<code>現金, , 319541</code><br>
+      補助科目ごとに行を分けることで、口座単位の正確な残高チェックが可能になります。
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="checkBtn" onclick="runCheck()" disabled>チェック実行</button>
+      <button class="btn btn-secondary" onclick="runSample()">サンプルで試す</button>
+    </div>
   </div>
 
   <!-- ローディング -->
@@ -211,91 +194,92 @@
     <p>チェック中...</p>
   </div>
 
-  <!-- 結果エリア -->
+  <!-- 結果 -->
   <div id="results">
     <div class="meta-info" id="metaInfo"></div>
-
     <div class="summary-grid" id="summaryGrid"></div>
-
     <div class="filter-tabs" id="filterTabs"></div>
-
     <div class="issue-list" id="issueList"></div>
   </div>
-
 </div>
 
 <script>
-  const uploadArea = document.getElementById('uploadArea');
+  const files = { journal: null, ob: null, prior: null };
 
-  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
-  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
-  uploadArea.addEventListener('drop', e => {
+  function setFile(input, key) {
+    if (!input.files[0]) return;
+    files[key] = input.files[0];
+    document.getElementById('l-' + key).textContent = '✅ ' + input.files[0].name;
+    document.getElementById('z-' + key).classList.add('has-file');
+    if (key === 'journal') document.getElementById('checkBtn').disabled = false;
+  }
+  function dov(e, id) { e.preventDefault(); document.getElementById(id).classList.add('dragover'); }
+  function dol(id)    { document.getElementById(id).classList.remove('dragover'); }
+  function odrop(e, key) {
     e.preventDefault();
-    uploadArea.classList.remove('dragover');
-    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
-  });
+    dol('z-' + key);
+    if (e.dataTransfer.files[0]) {
+      files[key] = e.dataTransfer.files[0];
+      document.getElementById('l-' + key).textContent = '✅ ' + files[key].name;
+      document.getElementById('z-' + key).classList.add('has-file');
+      if (key === 'journal') document.getElementById('checkBtn').disabled = false;
+    }
+  }
 
-  async function handleFile(file) {
-    if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
+  async function runCheck() {
+    if (!files.journal) return alert('仕訳帳CSVを選択してください');
+    const fd = new FormData();
+    fd.append('file', files.journal);
+    if (files.ob)    fd.append('opening_balance', files.ob);
+    if (files.prior) fd.append('prior_year',      files.prior);
     showLoading();
     try {
-      const res = await fetch('/api/check', { method: 'POST', body: formData });
+      const res  = await fetch('/api/check', { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
       renderResults(data);
-    } catch (e) {
-      alert('エラー: ' + e.message);
-      hideLoading();
-    }
+    } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
 
   async function runSample() {
     showLoading();
     try {
-      const res = await fetch('/api/sample');
+      const res  = await fetch('/api/sample');
       const data = await res.json();
       renderResults(data);
-    } catch (e) {
-      alert('エラー: ' + e.message);
-      hideLoading();
-    }
+    } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
 
   function showLoading() {
     document.getElementById('loading').style.display = 'block';
     document.getElementById('results').style.display = 'none';
   }
-
-  function hideLoading() {
-    document.getElementById('loading').style.display = 'none';
-  }
+  function hideLoading() { document.getElementById('loading').style.display = 'none'; }
 
   function renderResults(data) {
     hideLoading();
     const { summary, issues } = data;
 
-    // メタ情報
+    const obBadge    = summary.has_opening_balances ? '<span class="badge-green">期首残高あり</span>' : '<span class="badge-red">期首残高なし</span>';
+    const priorBadge = summary.has_prior_year       ? '<span class="badge-green">前期比較あり</span>' : '';
+
     document.getElementById('metaInfo').innerHTML = `
       <span>📁 <strong>${summary.software}</strong></span>
-      <span>📅 期間: <strong>${summary.date_range.start} ～ ${summary.date_range.end}</strong></span>
-      <span>📋 仕訳件数: <strong>${summary.total_entries.toLocaleString()}件</strong></span>
+      <span>📅 <strong>${summary.date_range.start} ～ ${summary.date_range.end}</strong></span>
+      <span>📋 仕訳 <strong>${summary.total_entries.toLocaleString()}件</strong></span>
+      ${obBadge} ${priorBadge}
     `;
 
-    // サマリーカード
+    const yoyCount = issues.filter(i => i.category === '前年比').length;
     document.getElementById('summaryGrid').innerHTML = `
       <div class="summary-card card-error">
-        <div class="count">${summary.error}</div>
-        <div class="label">🔴 要修正</div>
+        <div class="count">${summary.error}</div><div class="label">🔴 要修正</div>
       </div>
       <div class="summary-card card-warning">
-        <div class="count">${summary.warning}</div>
-        <div class="label">🟡 要確認</div>
+        <div class="count">${summary.warning}</div><div class="label">🟡 要確認</div>
       </div>
       <div class="summary-card card-info">
-        <div class="count">${summary.info}</div>
-        <div class="label">🔵 提案・確認</div>
+        <div class="count">${summary.info}</div><div class="label">🔵 提案・確認</div>
       </div>
       <div class="summary-card card-total">
         <div class="count">${summary.error + summary.warning + summary.info}</div>
@@ -303,54 +287,54 @@
       </div>
     `;
 
-    // フィルタータブ
     document.getElementById('filterTabs').innerHTML = `
-      <div class="tab all active" onclick="filterIssues('all', this)">すべて</div>
-      <div class="tab error" onclick="filterIssues('error', this)">🔴 要修正 (${summary.error})</div>
-      <div class="tab warning" onclick="filterIssues('warning', this)">🟡 要確認 (${summary.warning})</div>
-      <div class="tab info" onclick="filterIssues('info', this)">🔵 提案 (${summary.info})</div>
+      <div class="tab all active" onclick="filterIssues('all',this)">すべて</div>
+      <div class="tab error"      onclick="filterIssues('error',this)">🔴 要修正 (${summary.error})</div>
+      <div class="tab warning"    onclick="filterIssues('warning',this)">🟡 要確認 (${summary.warning})</div>
+      <div class="tab info"       onclick="filterIssues('info',this)">🔵 提案 (${summary.info})</div>
+      ${yoyCount > 0 ? `<div class="tab yoy" onclick="filterIssues('yoy',this)">📈 前年比 (${yoyCount})</div>` : ''}
     `;
 
-    // 指摘リスト
     window._allIssues = issues;
     renderIssues(issues);
-
     document.getElementById('results').style.display = 'block';
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
   }
 
   function renderIssues(issues) {
-    const icons = { error: '🔴', warning: '🟡', info: '🔵' };
-    const labels = { error: '要修正', warning: '要確認', info: '提案' };
+    const icons  = { error:'🔴', warning:'🟡', info:'🔵' };
+    const labels = { error:'要修正', warning:'要確認', info:'提案' };
 
-    if (issues.length === 0) {
-      document.getElementById('issueList').innerHTML = `
-        <div class="empty-state">
-          <div class="icon">✅</div>
-          <p>このカテゴリの指摘はありません</p>
-        </div>`;
+    if (!issues.length) {
+      document.getElementById('issueList').innerHTML =
+        '<div class="empty-state"><div class="icon">✅</div><p>このカテゴリの指摘はありません</p></div>';
       return;
     }
 
-    document.getElementById('issueList').innerHTML = issues.map(issue => `
-      <div class="issue-card ${issue.level}">
-        <div class="issue-icon">${icons[issue.level]}</div>
+    document.getElementById('issueList').innerHTML = issues.map(i => `
+      <div class="issue-card ${i.level}">
+        <div class="issue-icon">${icons[i.level] || '📌'}</div>
         <div class="issue-body">
           <div class="issue-header">
-            <span class="badge badge-${issue.level}">${labels[issue.level]}</span>
-            <span class="badge badge-category">${issue.category}</span>
-            <span class="badge badge-account">${issue.account}</span>
-            <span class="badge badge-month">${issue.month}</span>
+            <span class="badge badge-${i.level}">${labels[i.level] || i.level}</span>
+            <span class="badge badge-category">${i.category}</span>
+            <span class="badge badge-account">${i.account}</span>
+            <span class="badge badge-month">${i.month}</span>
           </div>
-          <div class="issue-message">${issue.message}</div>
+          <div class="issue-message">${i.message}</div>
         </div>
       </div>
     `).join('');
   }
 
-  function filterIssues(level, el) {
+  function filterIssues(key, el) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
-    const filtered = level === 'all' ? window._allIssues : window._allIssues.filter(i => i.level === level);
+    const filtered = key === 'all'
+      ? window._allIssues
+      : key === 'yoy'
+        ? window._allIssues.filter(i => i.category === '前年比')
+        : window._allIssues.filter(i => i.level === key);
     renderIssues(filtered);
   }
 </script>
