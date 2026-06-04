@@ -122,9 +122,23 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
             similar = _simple_similarity(desc_i, desc_j)
 
             key = (min(i, j), max(i, j))
-            if similar > 0.6 and key not in found_pairs:
-                found_pairs.add(key)
-                issues.append({
+            if similar <= 0.6 or key in found_pairs:
+                continue
+
+            # ── 除外ルール ──────────────────────────────
+            # ① 往復交通費: 「A〜B」vs「B〜A」は行きと帰り
+            if _is_round_trip(desc_i, desc_j):
+                continue
+            # ② 番号・コード違い: 数字が含まれていてその数字が異なる場合は別取引
+            if _has_different_numbers(desc_i, desc_j):
+                continue
+            # ③ 固有名詞（人名等）の違い: 特定の語が異なる場合は別取引
+            if _has_different_proper_nouns(desc_i, desc_j):
+                continue
+            # ────────────────────────────────────────────
+
+            found_pairs.add(key)
+            issues.append({
                     "level": "warning", "category": "5-2 重複仕訳",
                     "check_id": "5-2", "account": str(ri["debit_account"]),
                     "month": str(ri["date"].to_period("M")),
@@ -137,6 +151,65 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     ),
                 })
     return issues
+
+
+def _is_round_trip(desc_i: str, desc_j: str) -> bool:
+    """
+    往復交通費の検出: 「A〜B」と「B〜A」のパターンを検知する。
+    例: 「東京〜長岡」vs「長岡〜東京」→ True（除外）
+    """
+    import re
+    pattern = re.compile(r'(.+?)〜(.+)')
+    m_i = pattern.search(desc_i)
+    m_j = pattern.search(desc_j)
+    if not m_i or not m_j:
+        return False
+    from_i, to_i = m_i.group(1).strip(), m_i.group(2).strip()
+    from_j, to_j = m_j.group(1).strip(), m_j.group(2).strip()
+    # 方向が逆なら往復
+    return (from_i == to_j and to_i == from_j)
+
+
+def _has_different_numbers(desc_i: str, desc_j: str) -> bool:
+    """
+    番号・コード違いの検出: 両方の摘要に数字があり、その数字が異なる場合。
+    例: 「リフト 2861」vs「リフト 2902」→ True（除外）
+         「リフト B2t 9-え336」vs「リフト B1.8t 9-い1360」→ True（除外）
+    """
+    import re
+    # 数字の塊（スペース区切りの単語内の数字を含む語）を抽出
+    nums_i = re.findall(r'[A-Za-z0-9ぁ-ん゠-ヿ]*\d+[A-Za-z0-9ぁ-ん゠-ヿ]*', desc_i)
+    nums_j = re.findall(r'[A-Za-z0-9ぁ-ん゠-ヿ]*\d+[A-Za-z0-9ぁ-ん゠-ヿ]*', desc_j)
+    if not nums_i or not nums_j:
+        return False
+    # どちらかに含まれる数字トークンが完全一致しない → 別アイテム
+    set_i = set(nums_i)
+    set_j = set(nums_j)
+    # 共通部分がなければ（全部違う）→ 別取引
+    # 少なくとも1つ違う数字トークンがある → 別取引
+    return bool(set_i.symmetric_difference(set_j))
+
+
+def _has_different_proper_nouns(desc_i: str, desc_j: str) -> bool:
+    """
+    固有名詞（人名・機器名等）の違いを検出。
+    同じ構造の摘要で「大中」「椎葉」のように特定の語だけ異なる場合は別取引。
+    アプローチ: 共通の先頭部分を除いた残り部分が大きく異なる場合を検知。
+    例: 「長期精動 大中 20年」vs「長期精動 椎葉 20年」→ True（除外）
+    """
+    # スペース区切りでトークン化
+    tokens_i = desc_i.split()
+    tokens_j = desc_j.split()
+    if not tokens_i or not tokens_j:
+        return False
+    # 共通しないトークンが存在し、かつそれが純粋な数字でない（固有名詞らしい）場合
+    only_in_i = set(tokens_i) - set(tokens_j)
+    only_in_j = set(tokens_j) - set(tokens_i)
+    import re
+    def is_proper(token_set):
+        return any(not re.match(r'^[\d\s\-\〜\.]+$', t) for t in token_set)
+    # 両方に固有名詞らしいトークンの差分がある → 別取引
+    return bool(only_in_i) and bool(only_in_j) and is_proper(only_in_i) and is_proper(only_in_j)
 
 
 def _simple_similarity(s1: str, s2: str) -> float:

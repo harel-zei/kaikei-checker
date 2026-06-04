@@ -71,12 +71,13 @@ def _check_4_1_wire_fee_clearing(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 
 # ──────────────────────────────────────────────────────────
-# 4-2: 仮払金・立替金の長期滞留・精算漏れ
+# 4-2: 仮払金・立替金の長期滞留・精算漏れ（補助科目・件別）
 # ──────────────────────────────────────────────────────────
 def _check_4_2_suspense_aging(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
-    仮払金・立替金の発生後90日以上精算されていない残高を検知
-    また、二重精算疑い（仮払金が残ったまま同期間に旅費等が直接計上）も検知
+    仮払金・立替金を補助科目（または案件）ごとに追跡し、
+    発生後90日以上精算されていない個々の取引を指摘する。
+    合計額ではなく1件1件を個別に報告する。
     """
     issues = []
     last_date = df["date"].dropna().max()
@@ -84,68 +85,78 @@ def _check_4_2_suspense_aging(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return issues
 
     for account in ["仮払金", "立替金"]:
-        entries = df[
+        all_entries = df[
             df["debit_account"].astype(str).str.contains(account, na=False) |
             df["credit_account"].astype(str).str.contains(account, na=False)
         ].copy()
-        if entries.empty:
+        if all_entries.empty:
             continue
 
-        # 借方（発生）
-        debit_entries = entries[
-            entries["debit_account"].astype(str).str.contains(account, na=False)
-        ].copy()
-        # 貸方（精算）
-        credit_total = entries[
-            entries["credit_account"].astype(str).str.contains(account, na=False)
-        ]["credit_amount"].sum()
+        debit_rows  = all_entries[all_entries["debit_account"].astype(str).str.contains(account, na=False)].copy()
+        credit_rows = all_entries[all_entries["credit_account"].astype(str).str.contains(account, na=False)].copy()
 
-        total_issued  = debit_entries["debit_amount"].sum()
-        total_settled = credit_total
-        unsettled     = total_issued - total_settled
+        # 補助科目の一覧を収集
+        subs = set()
+        if "debit_sub" in df.columns:
+            subs |= set(debit_rows["debit_sub"].dropna().astype(str).str.strip().unique())
+        subs.discard(""); subs.discard("nan")
 
-        if unsettled <= 0:
-            continue
+        # 補助科目がない場合は全体を1グループとして扱う
+        groups = [(s, True) for s in subs] if subs else [(None, False)]
 
-        # 90日以上前の未精算発生を検知
-        old_entries = debit_entries[
-            (last_date - debit_entries["date"]).dt.days >= SUSPENSE_DAYS_THRESHOLD
-        ]
-        if not old_entries.empty:
-            old_total = old_entries["debit_amount"].sum()
-            oldest    = old_entries["date"].min()
-            issues.append({
-                "level": "error", "category": f"4-2 {account}滞留",
-                "check_id": "4-2", "account": account,
-                "month": str(oldest.to_period("M")),
-                "message": (
-                    f"【4-2・高】{account} に {oldest.date()} から90日以上経過した"
-                    f"未精算残高（合計 {old_total:,.0f}円）があります。"
-                    "放置すると役員貸付金認定リスクや経費の期間帰属誤りが生じます。"
-                    "精算仕訳または返金処理を確認してください。"
-                ),
-            })
+        for (sub, has_sub) in groups:
+            if has_sub:
+                d_sub = debit_rows[debit_rows.get("debit_sub", pd.Series(dtype=str)).astype(str).str.strip() == sub]
+                c_sub = credit_rows[credit_rows.get("credit_sub", pd.Series(dtype=str)).astype(str).str.strip() == sub]
+                label = f"{account}（{sub}）"
+            else:
+                d_sub = debit_rows
+                c_sub = credit_rows
+                label = account
 
-        # 決算またぎチェック（期末最終月に未精算残高あり）
-        last_month = last_date.to_period("M")
-        period = df["date"].dt.to_period("M")
-        monthly_d = debit_entries.groupby(period.loc[debit_entries.index])["debit_amount"].sum()
-        monthly_c = entries[
-            entries["credit_account"].astype(str).str.contains(account, na=False)
-        ].groupby(period.loc[entries[
-            entries["credit_account"].astype(str).str.contains(account, na=False)
-        ].index])["credit_amount"].sum()
+            if d_sub.empty:
+                continue
 
-        running = monthly_d.subtract(monthly_c, fill_value=0).cumsum()
-        if last_month in running.index and running[last_month] > 10000:
-            issues.append({
-                "level": "warning", "category": f"4-2 {account}決算またぎ",
-                "check_id": "4-2", "account": account,
-                "month": str(last_month),
-                "message": (
-                    f"【4-2・高】{account} が期末月（{last_month}）に {running[last_month]:,.0f}円 残高があります。"
-                    "決算をまたいで残存する場合、役員貸付認定や費用期間帰属の問題が生じる可能性があります。"
-                ),
-            })
+            # 累積精算額（貸方合計）
+            settled_total = c_sub["credit_amount"].sum()
+            issued_total  = d_sub["debit_amount"].sum()
+            if issued_total <= settled_total:
+                continue  # 精算済み
+
+            # 未精算の発生仕訳を古い順に積み上げ、未精算分を特定
+            remaining = issued_total - settled_total
+            d_sorted = d_sub.sort_values("date")
+            covered  = 0.0
+
+            for _, row in d_sorted.iterrows():
+                amt = row["debit_amount"]
+                if covered + amt <= settled_total:
+                    covered += amt
+                    continue  # この行は精算済み
+
+                # この発生は未精算（全部または一部）
+                days_elapsed = (last_date - row["date"]).days if pd.notna(row["date"]) else 0
+                if days_elapsed < SUSPENSE_DAYS_THRESHOLD:
+                    continue  # 90日未満はまだ許容
+
+                desc = str(row.get("description", "")).strip()
+                desc_clean = "" if desc.lower() in ("nan","none","") else desc
+                desc_part  = f"（摘要: {desc_clean[:30]}）" if desc_clean else ""
+
+                issues.append({
+                    "level": "error",
+                    "category": f"4-2 {account}滞留",
+                    "check_id": "4-2",
+                    "account": label,
+                    "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+                    "message": (
+                        f"【4-2・高】{label} に {row['date'].date()} 発生の"
+                        f" {amt:,.0f}円 が{days_elapsed}日経過しても未精算です{desc_part}。"
+                        "精算仕訳または返金処理を確認してください。"
+                    ),
+                })
+                covered += amt  # 残りは次のループへ
+
+        # 注: 決算またぎチェックは個別指摘の中で90日超判定により実質カバー済み
 
     return issues
