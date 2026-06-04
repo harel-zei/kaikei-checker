@@ -5,53 +5,81 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>会計データチェックシステム</title>
   <style>
+    /* ══ Pattern C: ソフトアンバー ══ */
+    :root {
+      --orange:      #f47a20;
+      --orange-dark: #d4620a;
+      --orange-light:#ffa040;
+      --orange-pale: #fef5ed;
+      --orange-muted:#f0a060;
+      --bg:          #f8f4ef;
+      --text:        #2c1f10;
+      --text-muted:  #9a7860;
+      --border:      #e8d5c0;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: "Hiragino Sans", "Meiryo", sans-serif; background: #f0f4fa; color: #333; }
+    body { font-family: "Hiragino Sans", "Meiryo", sans-serif; background: var(--bg); color: var(--text); }
 
     header {
-      background: linear-gradient(135deg, #1a56db, #1e429f);
-      color: white; padding: 18px 32px;
-      display: flex; align-items: center; gap: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      background: white;
+      border-bottom: 3px solid var(--orange);
+      color: var(--text); padding: 16px 32px;
+      display: flex; align-items: center; gap: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
-    header h1   { font-size: 1.4rem; font-weight: 700; }
-    header .sub { font-size: 0.83rem; opacity: 0.8; margin-top: 2px; }
+    .header-logo {
+      width: 42px; height: 42px;
+      background: linear-gradient(135deg, var(--orange), var(--orange-light));
+      border-radius: 10px; display: flex; align-items: center;
+      justify-content: center; font-size: 1.4rem; flex-shrink: 0;
+    }
+    header h1   { font-size: 1.35rem; font-weight: 800; color: var(--text); }
+    header .sub { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
 
     .container { max-width: 860px; margin: 0 auto; padding: 28px 16px; }
 
     .card {
-      background: white; border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      background: white; border-radius: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
       padding: 24px 28px; margin-bottom: 20px;
     }
-    .card-title { font-size: 1rem; font-weight: 700; margin-bottom: 16px; color: #1e429f; }
+    .card-title {
+      font-size: 0.95rem; font-weight: 800; margin-bottom: 16px;
+      color: var(--text); display: flex; align-items: center; gap: 8px;
+    }
+    .card-title::before {
+      content: ''; display: inline-block;
+      width: 4px; height: 18px;
+      background: var(--orange); border-radius: 2px; flex-shrink: 0;
+    }
 
     /* ── 大きなドロップゾーン ── */
     .drop-main {
-      border: 2px dashed #93c5fd; border-radius: 12px;
+      border: 2px dashed var(--orange-muted); border-radius: 12px;
       padding: 40px 24px; text-align: center; cursor: pointer;
-      transition: all 0.2s; background: #f8faff; margin-bottom: 16px;
+      transition: all 0.2s; background: #fdf9f5; margin-bottom: 16px;
     }
-    .drop-main:hover, .drop-main.over { border-color: #1a56db; background: #eff6ff; }
+    .drop-main:hover, .drop-main.over { border-color: var(--orange); background: var(--orange-pale); }
     .drop-main.has-files { border-color: #059669; background: #f0fdf4; }
     .drop-main .icon  { font-size: 2.6rem; margin-bottom: 10px; }
-    .drop-main .title { font-size: 1.05rem; font-weight: 600; color: #1a56db; margin-bottom: 6px; }
+    .drop-main .title { font-size: 1.05rem; font-weight: 700; color: #c05810; margin-bottom: 6px; }
     .drop-main.has-files .title { color: #059669; }
-    .drop-main .hint  { font-size: 0.85rem; color: #6b7280; line-height: 1.7; }
+    .drop-main .hint  { font-size: 0.85rem; color: var(--text-muted); line-height: 1.7; }
 
     /* ファイルリスト */
     .file-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
     .file-item {
       display: flex; align-items: center; gap: 10px;
-      background: #f8faff; border: 1px solid #dbeafe;
+      background: var(--orange-pale); border: 1px solid #f0c090;
       border-radius: 8px; padding: 8px 14px; font-size: 0.85rem;
     }
-    .file-item .name   { flex: 1; color: #1e40af; font-weight: 500; }
+    .file-item .name   { flex: 1; color: #8a4820; font-weight: 500; }
     .file-item .badge  { font-size: 0.72rem; padding: 2px 8px; border-radius: 8px; font-weight: 600; white-space: nowrap; }
-    .badge-journal  { background: #dbeafe; color: #1e40af; }
+    .badge-journal  { background: #fde8d8; color: #7a3800; }
     .badge-bal-main { background: #dcfce7; color: #166534; }
     .badge-bal-sub  { background: #fef9c3; color: #854d0e; }
-    .badge-current  { background: #e0f2fe; color: #075985; }
+    .badge-current  { background: #fde8d8; color: #7a3800; }
     .badge-prior    { background: #fce7f3; color: #9d174d; }
     .badge-unknown  { background: #f3f4f6; color: #6b7280; }
     .file-item .remove { cursor: pointer; color: #9ca3af; font-size: 1rem; line-height: 1; }
@@ -59,72 +87,75 @@
 
     /* 説明 */
     .guide {
-      background: #fffbeb; border: 1px solid #fde68a;
+      background: var(--orange-pale); border: 1px solid #f0c090;
       border-radius: 8px; padding: 12px 16px;
-      font-size: 0.82rem; color: #92400e; line-height: 1.75; margin-bottom: 16px;
+      font-size: 0.82rem; color: #7a3800; line-height: 1.75; margin-bottom: 16px;
     }
-    .guide strong { color: #78350f; }
+    .guide strong { color: #5a2800; }
 
     /* 振り分け結果ログ */
     .log-box {
-      background: #f8faff; border: 1px solid #dbeafe;
+      background: var(--orange-pale); border: 1px solid #f0c090;
       border-radius: 8px; padding: 12px 16px;
-      font-size: 0.8rem; color: #374151; line-height: 1.8;
+      font-size: 0.8rem; color: #6a3810; line-height: 1.8;
       margin-bottom: 14px; display: none;
     }
     .log-box.show { display: block; }
 
     /* ボタン */
-    .btn { padding: 10px 26px; border-radius: 8px; font-size: 0.93rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
-    .btn-primary   { background: #1a56db; color: white; }
-    .btn-primary:hover    { background: #1e429f; }
-    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
-    .btn-secondary { background: #f3f4f6; color: #374151; }
-    .btn-secondary:hover  { background: #e5e7eb; }
+    .btn { padding: 10px 26px; border-radius: 9px; font-size: 0.93rem; font-weight: 700; cursor: pointer; border: none; transition: all 0.15s; }
+    .btn-primary   { background: var(--orange); color: white; box-shadow: 0 2px 8px rgba(244,122,32,.3); }
+    .btn-primary:hover    { background: var(--orange-dark); }
+    .btn-primary:disabled { background: #f0c090; cursor: not-allowed; box-shadow: none; }
+    .btn-secondary { background: white; color: var(--orange); border: 1.5px solid var(--orange); }
+    .btn-secondary:hover  { background: var(--orange-pale); }
     .btn-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 
     /* サマリー */
     .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
-    .sc { background: white; border-radius: 10px; padding: 16px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-    .sc .n   { font-size: 2.2rem; font-weight: 700; line-height: 1; }
-    .sc .lbl { font-size: 0.8rem; color: #6b7280; margin-top: 5px; }
+    .sc { background: white; border-radius: 12px; padding: 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .sc .n   { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+    .sc .lbl { font-size: 0.8rem; color: var(--text-muted); margin-top: 5px; }
     .c-err .n { color: #dc2626; } .c-wrn .n { color: #d97706; }
-    .c-inf .n { color: #2563eb; } .c-tot .n { color: #059669; }
+    .c-inf .n { color: var(--orange); }
+    .c-tot { background: linear-gradient(135deg, var(--orange), var(--orange-light)); }
+    .c-tot .n   { color: white; }
+    .c-tot .lbl { color: rgba(255,255,255,0.85); }
 
     /* フィルタ */
     .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-    .tab  { padding: 5px 14px; border-radius: 20px; font-size: 0.83rem; cursor: pointer; border: 2px solid transparent; font-weight: 500; }
-    .tab.all     { background: #f3f4f6; color: #374151; }
-    .tab.error   { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
-    .tab.warning { background: #fffbeb; color: #d97706; border-color: #fde68a; }
-    .tab.info    { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+    .tab  { padding: 5px 14px; border-radius: 22px; font-size: 0.83rem; cursor: pointer; border: 1.5px solid transparent; font-weight: 500; transition: all 0.15s; }
+    .tab.all     { background: white; color: var(--text-muted); border-color: var(--border); }
+    .tab.error   { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
+    .tab.warning { background: #fffbeb; color: #d97706; border-color: #fcd34d; }
+    .tab.info    { background: var(--orange-pale); color: #c05810; border-color: #fbbf80; }
     .tab.yoy     { background: #f5f3ff; color: #7c3aed; border-color: #ddd6fe; }
-    .tab.active.all     { border-color: #9ca3af; font-weight: 700; }
+    .tab.active.all     { background: var(--orange); color: white; border-color: var(--orange); font-weight: 700; }
     .tab.active.error   { border-color: #dc2626; font-weight: 700; }
     .tab.active.warning { border-color: #d97706; font-weight: 700; }
-    .tab.active.info    { border-color: #2563eb; font-weight: 700; }
+    .tab.active.info    { border-color: var(--orange); font-weight: 700; }
     .tab.active.yoy     { border-color: #7c3aed; font-weight: 700; }
 
     /* 指摘カード */
     .issues { display: flex; flex-direction: column; gap: 10px; }
-    .ic { background: white; border-radius: 10px; padding: 13px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); border-left: 4px solid; display: flex; gap: 11px; }
+    .ic { background: white; border-radius: 11px; padding: 14px 18px; box-shadow: 0 1px 6px rgba(0,0,0,0.06); border-left: 4px solid; display: flex; gap: 11px; }
     .ic.error   { border-color: #dc2626; }
     .ic.warning { border-color: #f59e0b; }
-    .ic.info    { border-color: #3b82f6; }
+    .ic.info    { border-color: var(--orange); }
     .ic-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 2px; }
     .ic-body { flex: 1; }
     .ic-head { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 5px; }
-    .bdg { padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; }
+    .bdg { padding: 2px 9px; border-radius: 12px; font-size: 0.72rem; font-weight: 700; }
     .b-error   { background: #fef2f2; color: #dc2626; }
     .b-warning { background: #fffbeb; color: #d97706; }
-    .b-info    { background: #eff6ff; color: #2563eb; }
-    .b-cat  { background: #f3f4f6; color: #374151; }
+    .b-info    { background: var(--orange-pale); color: #c05810; }
+    .b-cat  { background: #fde8d8; color: #7a3800; }
     .b-acc  { background: #f0fdf4; color: #166534; }
-    .b-mon  { background: #faf5ff; color: #6b21a8; }
-    .ic-msg { font-size: 0.88rem; line-height: 1.65; color: #374151; }
+    .b-mon  { background: #f5f3ff; color: #6b21a8; }
+    .ic-msg { font-size: 0.88rem; line-height: 1.65; color: #4a3020; }
 
-    .meta { background: white; border-radius: 10px; padding: 11px 16px; margin-bottom: 16px; font-size: 0.85rem; color: #6b7280; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-    .meta strong { color: #374151; }
+    .meta { background: white; border-radius: 10px; padding: 11px 16px; margin-bottom: 16px; font-size: 0.85rem; color: var(--text-muted); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; box-shadow: 0 1px 6px rgba(0,0,0,0.06); }
+    .meta strong { color: var(--text); }
     .bg-g { background: #f0fdf4; color: #059669; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
     .bg-r { background: #fef2f2; color: #dc2626; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
     .bg-p { background: #f5f3ff; color: #7c3aed; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
@@ -133,16 +164,16 @@
     .client-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
     .saved-file-row {
       display: flex; align-items: center; gap: 10px;
-      padding: 7px 12px; border-radius: 8px; font-size: .83rem;
-      background: #f0fdf4; border: 1px solid #bbf7d0; margin-bottom: 6px;
+      padding: 8px 14px; border-radius: 8px; font-size: .83rem;
+      background: white; border: 1px solid #f0c090; margin-bottom: 6px;
     }
     .saved-file-row.missing { background: #fef2f2; border-color: #fecaca; }
-    .saved-file-row .file-name { flex: 1; color: #166534; }
+    .saved-file-row .file-name { flex: 1; color: #8a4820; font-weight: 600; }
     .saved-file-row.missing .file-name { color: #dc2626; }
-    .saved-file-row .saved-date { font-size: .75rem; color: #6b7280; }
+    .saved-file-row .saved-date { font-size: .75rem; color: var(--text-muted); }
     .saved-file-row .del-btn {
       font-size: .75rem; color: #9ca3af; cursor: pointer; padding: 1px 6px;
-      border-radius: 4px; border: 1px solid #e5e7eb;
+      border-radius: 4px; border: 1px solid var(--border);
     }
     .saved-file-row .del-btn:hover { color: #dc2626; border-color: #fecaca; }
 
@@ -158,7 +189,7 @@
 <body>
 
 <header>
-  <div>📊</div>
+  <div class="header-logo">📊</div>
   <div>
     <h1>会計データチェックシステム</h1>
     <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
@@ -176,7 +207,7 @@
       <div style="flex:1;min-width:200px;">
         <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">保存済みクライアントから選択</label>
         <select id="clientSelect" onchange="onClientSelect(this.value)"
-                style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;">
+                style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:0.9rem;background:#fdf9f5;">
           <option value="">-- 選択してください --</option>
         </select>
       </div>
@@ -186,7 +217,7 @@
         <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">新規クライアント名を入力</label>
         <input type="text" id="clientInput" placeholder="例: サンブルームコスメ株式会社"
                oninput="onClientInput(this.value)"
-               style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;">
+               style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:0.9rem;background:#fdf9f5;">
       </div>
     </div>
 
