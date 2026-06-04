@@ -160,7 +160,7 @@ def _check_3_3_repair_capitalization(df: pd.DataFrame) -> List[Dict[str, Any]]:
             "message": (
                 f"【3-3・高】修繕費に {row['debit_amount']:,.0f}円 の計上があります。"
                 "20万円以上の修繕は資本的支出として固定資産計上が必要な場合があります。"
-                f"摘要: {str(row.get('description',''))[:30]}"
+                + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
             ),
         })
     return issues

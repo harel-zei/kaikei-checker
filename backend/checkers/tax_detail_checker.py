@@ -75,9 +75,9 @@ def _check_2_1_reduced_rate(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "warning", "category": "2-1 軽減税率",
             "check_id": "2-1", "account": str(row["debit_account"]),
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+            "month": month_safe(row),
             "message": (
-                f"【2-1・中】摘要「{str(row['description'])[:30]}」は飲食料品の疑いがありますが、"
+                f"【2-1・中】摘要「{desc_safe(row)}」は飲食料品の疑いがありますが、"
                 f"税区分が「{row[col]}」（10%）になっています。軽減税率8%を確認してください。"
             ),
         })
@@ -100,9 +100,9 @@ def _check_2_2_card_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-2 決済手数料非課税",
             "check_id": "2-2", "account": "支払手数料",
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+            "month": month_safe(row),
             "message": (
-                f"【2-2・高】摘要「{str(row['description'])[:30]}」はクレジットカード・EC決済手数料と"
+                f"【2-2・高】摘要「{desc_safe(row)}」はクレジットカード・EC決済手数料と"
                 "思われますが、税区分が課税（10%）になっています。"
                 "売上債権の譲渡にかかる手数料は非課税となります。"
             ),
@@ -169,9 +169,9 @@ def _check_2_4_membership_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "warning", "category": "2-4 諸会費課税漏れ",
             "check_id": "2-4", "account": "諸会費",
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+            "month": month_safe(row),
             "message": (
-                f"【2-4・中】諸会費の摘要「{str(row['description'])[:30]}」にクレジットカード年会費の"
+                f"【2-4・中】諸会費の摘要「{desc_safe(row)}」にクレジットカード年会費の"
                 "キーワードが含まれていますが、税区分が不課税/対象外になっています。"
                 "クレカ年会費は課税仕入（10%）となります。消費税控除漏れを確認してください。"
             ),
@@ -200,9 +200,9 @@ def _check_2_5_overseas_vendor(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-5 海外ベンダー",
             "check_id": "2-5", "account": str(row["debit_account"]),
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+            "month": month_safe(row),
             "message": (
-                f"【2-5・高】摘要「{str(row['description'])[:30]}」は海外ベンダーへの支払と"
+                f"【2-5・高】摘要「{desc_safe(row)}」は海外ベンダーへの支払と"
                 "思われますが、税区分が課税（10%）になっています。"
                 "国外事業者からの役務提供は原則として不課税となります。"
                 "リバースチャージ対象かどうかを確認してください。"
@@ -232,9 +232,9 @@ def _check_2_6_overseas_travel(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-6 海外渡航費",
             "check_id": "2-6", "account": str(row["debit_account"]),
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+            "month": month_safe(row),
             "message": (
-                f"【2-6・高】摘要「{str(row['description'])[:30]}」は海外渡航・国際線関連と"
+                f"【2-6・高】摘要「{desc_safe(row)}」は海外渡航・国際線関連と"
                 "思われますが、税区分が課税（10%）になっています。"
                 "海外現地の費用・国際線航空券は不課税（対象外）となります。"
             ),

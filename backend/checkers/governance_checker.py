@@ -9,6 +9,7 @@
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Any
+from checkers.check_utils import desc_safe, month_safe
 
 # 5-4: 交際費への疑いキーワード
 KW_ENTERTAINMENT = [
@@ -235,7 +236,7 @@ def _check_5_4_entertainment(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 f"【5-4・中】会議費 {row['debit_amount']:,.0f}円 が1万円を超えています。"
                 "1人あたり1万円超の飲食は交際費（損金不算入の可能性）となる場合があります。"
                 "参加人数の確認が必要です。"
-                f"摘要: 「{str(row.get('description',''))[:30]}」"
+                + (f"（摘要: 「{desc_safe(row)}」）" if desc_safe(row) else "")
             ),
         })
 
@@ -251,9 +252,9 @@ def _check_5_4_entertainment(df: pd.DataFrame) -> List[Dict[str, Any]]:
             issues.append({
                 "level": "warning", "category": "5-4 交際費境界",
                 "check_id": "5-4", "account": acct,
-                "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+                "month": month_safe(row),
                 "message": (
-                    f"【5-4・中】{acct} の摘要「{str(row.get('description',''))[:30]}」に"
+                    f"【5-4・中】{acct} の摘要「{desc_safe(row)}」に"
                     "贈答・ゴルフ等のキーワードが含まれています。"
                     "交際費（損金不算入リスク）への該当性を確認してください。"
                 ),
@@ -305,10 +306,11 @@ def _check_5_5_withholding(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "5-5 源泉徴収漏れ",
             "check_id": "5-5", "account": str(row["debit_account"]),
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+            "month": month_safe(row),
             "message": (
-                f"【5-5・高】{row['debit_account']} {row['debit_amount']:,.0f}円 の摘要"
-                f"「{str(row.get('description',''))[:30]}」に個人報酬のキーワードが含まれていますが、"
+                f"【5-5・高】{row['debit_account']} {row['debit_amount']:,.0f}円"
+                + (f"（摘要: 「{desc_safe(row)}」）" if desc_safe(row) else "")
+                + "に個人報酬のキーワードが含まれていますが、"
                 "同一伝票内に源泉所得税（預り金）の計上がありません。"
                 "個人への報酬支払時は原則10.21%の源泉徴収が必要です。"
             ),
