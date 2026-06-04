@@ -702,11 +702,18 @@
   // チェック対象期間セレクター
   // ════════════════════════════════════
   function buildPeriodOptions(startYM, endYM) {
-    // startYM, endYM: "YYYY-MM" 形式
-    const sel = document.getElementById('checkUntilSelect');
+    const sel   = document.getElementById('checkUntilSelect');
     const saved = sel.value;
     sel.innerHTML = '<option value="">最終入力月まで（自動）</option>';
-    if (!startYM || !endYM) return;
+
+    // 範囲が指定されていない場合は直近24ヶ月を表示
+    const now = new Date();
+    if (!startYM || !endYM) {
+      endYM   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+      const d = new Date(now.getFullYear(), now.getMonth() - 23, 1);
+      startYM = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    }
+
     let [sy, sm] = startYM.split('-').map(Number);
     let [ey, em] = endYM.split('-').map(Number);
     const months = [];
@@ -716,8 +723,8 @@
     }
     months.reverse();
     months.forEach(m => {
-      const opt = document.createElement('option');
-      opt.value = m;
+      const opt     = document.createElement('option');
+      opt.value     = m;
       const [y, mo] = m.split('-');
       opt.textContent = `${y}年${parseInt(mo)}月まで`;
       if (m === saved) opt.selected = true;
@@ -731,6 +738,7 @@
 
   // 初期化
   loadClientList();
+  buildPeriodOptions();   // ページ読み込み時に直近24ヶ月を生成
 
   // ════════════════════════════════════
   // ファイルアップロード
