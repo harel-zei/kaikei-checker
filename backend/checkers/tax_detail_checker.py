@@ -23,10 +23,13 @@ KW_SERVICE_AWARD = [
 # 関数内で複合判定する
 
 # 2-8: 新聞代（軽減税率8%対象）
+# ※ 電子版・デジタル版・IDサービス（日経ID等）は標準税率10%のため除外
 KW_NEWSPAPER = [
-    "新聞", "日経", "朝日新聞", "読売新聞", "毎日新聞", "産経新聞",
+    "新聞", "朝日新聞", "読売新聞", "毎日新聞", "産経新聞",
     "日本経済新聞", "中日新聞", "北海道新聞",
 ]
+# 電子・デジタル・IDを含む場合は軽減税率チェック対象外
+KW_NEWSPAPER_EXCLUDE = ["電子版", "電子", "デジタル", "ID", "オンライン", "Web", "web"]
 
 # 2-9: 売掛金回収時の振込手数料（売上対価の返還等として処理すべき）
 WIRE_FEE_AMOUNTS = [110, 220, 330, 440, 550, 660, 770, 880]
@@ -305,15 +308,26 @@ def _check_2_7_service_award(df: pd.DataFrame) -> List[Dict[str, Any]]:
 def _check_2_8_newspaper(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     2-8: 新聞代が10%になっている（軽減税率8%の対象）。
-    定期購読の新聞は軽減税率（8%）の対象。
+    定期購読の紙の新聞は軽減税率（8%）の対象。
+    ただし電子版・デジタル版・IDサービスは標準税率10%のため除外。
     """
     issues = []
     col = "debit_tax" if "debit_tax" in df.columns else None
     if not col:
         return issues
 
+    def _is_paper_newspaper(text: str) -> bool:
+        t = str(text)
+        # 新聞キーワードを含む
+        if not _has_keyword(t, KW_NEWSPAPER):
+            return False
+        # 電子・デジタル・IDを含む場合は除外（これらは10%が正しい）
+        if any(k.lower() in t.lower() for k in KW_NEWSPAPER_EXCLUDE):
+            return False
+        return True
+
     targets = df[
-        df["description"].astype(str).apply(lambda x: _has_keyword(x, KW_NEWSPAPER)) &
+        df["description"].astype(str).apply(_is_paper_newspaper) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
@@ -322,9 +336,10 @@ def _check_2_8_newspaper(df: pd.DataFrame) -> List[Dict[str, Any]]:
             "check_id": "2-8", "account": str(row["debit_account"]),
             "month": month_safe(row),
             "message": (
-                f"【2-8・中】摘要「{desc_safe(row)}」は新聞代と思われますが、"
+                f"【2-8・中】摘要「{desc_safe(row)}」は紙の新聞代と思われますが、"
                 "税区分が課税（10%）になっています。"
-                "定期購読の新聞は軽減税率（8%）の対象です。税区分を8%に修正してください。"
+                "定期購読の紙新聞は軽減税率（8%）の対象です。税区分を8%に修正してください。"
+                "（電子版・デジタル版は10%のため対象外）"
             ),
         })
     return issues
@@ -402,9 +417,9 @@ def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     f"【2-9・高】{row['debit_account']} {row['debit_amount']:,.0f}円"
                     + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
                     + "は売掛金回収時に差し引かれた振込手数料と思われます。"
-                    "この手数料は「課税仕入（10%）」ではなく"
-                    "「売上対価の返還等（10%）」として処理してください。"
-                    "（返還インボイスの交付義務は1万円未満なら免除）"
+                    "税区分を「課税仕入（10%）」から"
+                    "「売上対価の返還等（売返・10%）」に変更してください。"
+                    "1万円未満の売上返還はインボイスの交付義務が免除されます。"
                 ),
             })
     return issues
