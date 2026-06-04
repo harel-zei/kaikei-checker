@@ -409,7 +409,14 @@
 
     <div class="meta"   id="metaInfo"></div>
     <div class="summary-grid" id="summaryGrid"></div>
-    <div class="tabs"   id="filterTabs"></div>
+    <!-- CSVダウンロードボタン -->
+    <div id="exportBar" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+      <div class="tabs" id="filterTabs" style="margin-bottom:0;flex:1;"></div>
+      <button onclick="exportCSV()"
+        style="background:var(--orange);color:white;border:none;padding:8px 20px;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 2px 6px rgba(244,122,32,.3);">
+        📥 チェックシートCSV出力
+      </button>
+    </div>
     <div class="issues" id="issueList"></div>
   </div>
 
@@ -903,7 +910,8 @@
       ${cat5 > 0 ? `<div class="tab" style="background:#fff1f2;color:#be123c;border:2px solid #fecdd3;" onclick="filt('cat5',this)">⚠️ 税務 (${cat5})</div>` : ''}
     `;
 
-    window._issues = issues;
+    window._issues      = issues;
+    window._lastSummary = summary;
     renderIssues(issues);
     document.getElementById('results').style.display = 'block';
     document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
@@ -931,6 +939,45 @@
         </div>
       </div>
     `).join('');
+  }
+
+  async function exportCSV() {
+    if (!window._issues || window._issues.length === 0) {
+      alert('チェック結果がありません。先にチェックを実行してください。');
+      return;
+    }
+    // 対象月を生成
+    const summary = window._lastSummary || {};
+    const end     = summary.check_until || summary.date_range?.end?.slice(0,7) || '';
+    let period = '';
+    if (end && end.length >= 7) {
+      const [y, m] = end.split('-');
+      period = `${y}年${parseInt(m)}月分`;
+    }
+
+    try {
+      const res = await fetch('/api/export-csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          issues:      window._issues,
+          period:      period,
+          client_name: currentClient || '',
+        }),
+      });
+      if (!res.ok) throw new Error('CSV生成に失敗しました');
+
+      const blob     = await res.blob();
+      const url      = URL.createObjectURL(blob);
+      const filename = `チェックシート_${currentClient || ''}_${period}.csv`;
+      const a        = document.createElement('a');
+      a.href         = url;
+      a.download     = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch(e) {
+      alert('エラー: ' + e.message);
+    }
   }
 
   function filt(key, el) {

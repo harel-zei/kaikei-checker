@@ -3,7 +3,9 @@
 クライアント管理機能追加
 """
 from pathlib import Path
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Body
+from fastapi.responses import StreamingResponse
+import io, csv as csv_module
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from typing import List, Optional
@@ -382,6 +384,84 @@ async def _run_checks(
         },
         "issues": issues,
     })
+
+
+@app.post("/api/export-csv")
+async def export_csv(request: Request):
+    """
+    チェック結果をExcelフォーマット（チェックシート形式）のCSVとして出力する。
+
+    フォーマット（記入例シートに準拠）:
+      行1: 会計データ確認シート
+      行2: 対象月：YYYY年MM月分　　担当：
+      行3: 勘定科目, 補助科目, 日付, 確認内容（Harel入力欄）, ご回答, 対応済, 備考
+      行4+: チェック結果（同じ勘定科目は最初の行のみ表示）
+    """
+    body      = await request.json()
+    issues    = body.get("issues", [])
+    period    = body.get("period", "")      # "2026年5月分" 等
+    client    = body.get("client_name", "")
+
+    output = io.StringIO()
+    writer = csv_module.writer(output)
+
+    # タイトル行
+    writer.writerow(["会計データ確認シート"])
+    writer.writerow([f"対象月：{period}　　　　　　　　　　　　　　担当："])
+    writer.writerow([])
+    # 列ヘッダー
+    writer.writerow(["勘定科目", "補助科目", "日付", "確認内容（Harel入力欄）", "ご回答", "対応済", "備考"])
+
+    prev_account_key = None  # 前の行の親科目（同一科目は空白にする）
+
+    for issue in issues:
+        full_account = str(issue.get("account", ""))
+        month        = str(issue.get("month", ""))
+        message      = str(issue.get("message", ""))
+
+        # 「勘定科目（補助科目）」形式を分解
+        if "（" in full_account and full_account.endswith("）"):
+            paren_pos   = full_account.index("（")
+            base_acc    = full_account[:paren_pos]
+            sub_acc     = full_account[paren_pos+1:-1]
+        else:
+            base_acc = full_account
+            sub_acc  = ""
+
+        # 同一勘定科目は2行目以降を空白に
+        display_acc = base_acc if base_acc != prev_account_key else ""
+        if base_acc:
+            prev_account_key = base_acc
+
+        # 日付列: 「YYYY-MM」形式 → 「YYYY年MM月」 / 「全期間」「不明」はそのまま
+        date_str = month
+        if len(month) == 7 and month[4] == "-":
+            y, m = month.split("-")
+            date_str = f"{y}年{int(m)}月"
+
+        # メッセージから【〇〇】プレフィックスを除去してすっきりさせる
+        import re
+        clean_msg = re.sub(r'^【[^】]+】', '', message).strip()
+
+        writer.writerow([display_acc, sub_acc, date_str, clean_msg, "", "", ""])
+
+    csv_str = output.getvalue()
+
+    # BOM付きUTF-8（Excelで文字化けしないよう）
+    csv_bytes = b'\xef\xbb\xbf' + csv_str.encode("utf-8")
+
+    filename = f"チェックシート_{client}_{period}.csv".replace(" ", "_").replace("　", "_")
+
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{_url_encode(filename)}"}
+    )
+
+
+def _url_encode(s: str) -> str:
+    from urllib.parse import quote
+    return quote(s, safe="")
 
 
 @app.get("/api/sample")
