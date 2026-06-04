@@ -1,50 +1,28 @@
 """
 会計データ確認シート Excel出力モジュール
-テンプレート形式（チェックシート・記入例）に準拠して xlsx を生成する
+xlsxwriter を使用してネイティブチェックボックス付き xlsx を生成する。
+
+- F列（対応済）: クリックするだけで ✓/□ が切り替わる本物のチェックボックス
+- チェックを入れると行全体がグレーアウト（条件付き書式）
 """
 import io
 import re
-from openpyxl import Workbook
-from openpyxl.styles import (
-    Font, PatternFill, Alignment, Border, Side,
-    GradientFill,
-)
-from openpyxl.styles.differential import DifferentialStyle
-from openpyxl.formatting.rule import Rule
-from openpyxl.worksheet.datavalidation import DataValidation
-from openpyxl.utils import get_column_letter
+import xlsxwriter
 
 # ── カラー定数 ──────────────────────────────────────────
-COL_TITLE_BG    = "F47A20"   # オレンジ（ヘッダー背景）
-COL_TITLE_FG    = "FFFFFF"   # 白文字
-COL_HEADER_BG   = "FDE8D8"   # 薄オレンジ（列ヘッダー背景）
-COL_HEADER_FG   = "7A3800"   # 茶文字
-COL_DONE_BG     = "D0D0D0"   # グレー（対応済み行）
-COL_BORDER      = "E8D5C0"   # ボーダー色
-COL_ROW_ALT     = "FDF9F5"   # 交互行背景（薄クリーム）
-
-THIN  = Side(style="thin",   color=COL_BORDER)
-MED   = Side(style="medium", color="C09060")
-BORDER_ALL  = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
-BORDER_MED  = Border(left=MED,  right=MED,  top=MED,  bottom=MED)
-
-
-def _cell_style(ws, coord, value=None, *,
-                bold=False, size=11, fg=None, bg=None,
-                halign="left", valign="center",
-                wrap=False, border=None):
-    cell = ws[coord]
-    if value is not None:
-        cell.value = value
-    cell.font      = Font(name="メイリオ", size=size, bold=bold,
-                          color=fg or "000000")
-    cell.alignment = Alignment(horizontal=halign, vertical=valign,
-                               wrap_text=wrap)
-    if bg:
-        cell.fill = PatternFill("solid", fgColor=bg)
-    if border:
-        cell.border = border
-    return cell
+C_ORANGE        = "#F47A20"
+C_ORANGE_PALE   = "#FDE8D8"
+C_ORANGE_HEAD   = "#7A3800"
+C_ORANGE_BG     = "#FDF9F5"
+C_WHITE         = "#FFFFFF"
+C_BORDER        = "#E8D5C0"
+C_ROW_ALT       = "#FDF9F5"
+C_DONE_BG       = "#D0D0D0"
+C_DONE_FG       = "#888888"
+C_TITLE_BG      = "#F47A20"
+C_TITLE_FG      = "#FFFFFF"
+C_INSTR_BG      = "#FEF5ED"
+C_INSTR_FG      = "#9A7060"
 
 
 def build_checksheet_xlsx(
@@ -54,181 +32,248 @@ def build_checksheet_xlsx(
 ) -> bytes:
     """
     チェック結果を xlsx に変換して bytes で返す。
-
-    Args:
-        issues      : チェック結果リスト（message/account/month を持つ dict）
-        period      : 対象月（例: "2026年5月分"）
-        client_name : クライアント名
+    「チェックシート」「記入例」の2シート構成。
+    F列（対応済）にネイティブチェックボックスを配置し、
+    ☑ になると行全体がグレーアウトする。
     """
-    wb = Workbook()
-    ws_check  = wb.active
-    ws_check.title = "チェックシート"
-    ws_sample = wb.create_sheet("記入例")
-
-    _build_sheet(ws_check, issues, period, client_name)
-    _build_sample_sheet(ws_sample)
-
     buf = io.BytesIO()
-    wb.save(buf)
+    wb  = xlsxwriter.Workbook(buf, {"in_memory": True})
+
+    _build_checksheet(wb, issues, period, client_name)
+    _build_sample_sheet(wb)
+
+    wb.close()
     return buf.getvalue()
 
 
-def _build_sheet(ws, issues, period, client_name):
-    # ── 列幅設定 ──
-    ws.column_dimensions["A"].width = 18   # 勘定科目
-    ws.column_dimensions["B"].width = 22   # 補助科目
-    ws.column_dimensions["C"].width = 12   # 日付
-    ws.column_dimensions["D"].width = 60   # 確認内容
-    ws.column_dimensions["E"].width = 25   # ご回答
-    ws.column_dimensions["F"].width = 10   # 対応済
-    ws.column_dimensions["G"].width = 20   # 備考
+# ────────────────────────────────────────────────────────
+# チェックシート本体
+# ────────────────────────────────────────────────────────
+def _build_checksheet(wb, issues, period, client_name):
+    ws = wb.add_worksheet("チェックシート")
 
-    # ── 行高設定 ──
-    ws.row_dimensions[1].height = 28  # タイトル
-    ws.row_dimensions[2].height = 18
-    ws.row_dimensions[3].height = 18
-    ws.row_dimensions[4].height = 22  # ヘッダー
+    # ── フォーマット定義 ──
+    fmt_title = wb.add_format({
+        "bold": True, "font_size": 14,
+        "font_name": "メイリオ",
+        "bg_color": C_TITLE_BG, "font_color": C_TITLE_FG,
+        "align": "center", "valign": "vcenter",
+        "border": 2, "border_color": "#C09060",
+    })
+    fmt_period = wb.add_format({
+        "font_name": "メイリオ", "font_size": 11,
+        "bg_color": "#FFFAF6",
+        "valign": "vcenter",
+    })
+    fmt_instr = wb.add_format({
+        "font_name": "メイリオ", "font_size": 9,
+        "font_color": C_INSTR_FG, "bg_color": C_INSTR_BG,
+        "italic": True, "valign": "vcenter",
+    })
+    fmt_header = wb.add_format({
+        "bold": True, "font_size": 11,
+        "font_name": "メイリオ",
+        "bg_color": C_ORANGE_PALE, "font_color": C_ORANGE_HEAD,
+        "align": "center", "valign": "vcenter",
+        "border": 1, "border_color": C_BORDER,
+    })
+    def make_row_fmt(bg, is_wrap=False):
+        return wb.add_format({
+            "font_name": "メイリオ", "font_size": 10,
+            "bg_color": bg, "valign": "vcenter",
+            "text_wrap": is_wrap,
+            "border": 1, "border_color": C_BORDER,
+        })
+    fmt_row_w  = make_row_fmt(C_WHITE,    True)
+    fmt_row_a  = make_row_fmt(C_ROW_ALT,  True)
+    fmt_row_c  = make_row_fmt(C_WHITE,    False)
+    fmt_row_ca = make_row_fmt(C_ROW_ALT,  False)
+
+    # ── 列幅 ──
+    ws.set_column("A:A", 18)   # 勘定科目
+    ws.set_column("B:B", 22)   # 補助科目
+    ws.set_column("C:C", 12)   # 日付
+    ws.set_column("D:D", 62)   # 確認内容
+    ws.set_column("E:E", 26)   # ご回答
+    ws.set_column("F:F", 10)   # 対応済（チェックボックス）
+    ws.set_column("G:G", 20)   # 備考
+
+    # ── 行高 ──
+    ws.set_row(0, 28)  # タイトル
+    ws.set_row(1, 18)
+    ws.set_row(2, 18)
+    ws.set_row(3, 22)  # ヘッダー
 
     # ── Row1: タイトル ──
-    ws.merge_cells("A1:G1")
-    _cell_style(ws, "A1", "会計データ確認シート",
-                bold=True, size=14, fg=COL_TITLE_FG, bg=COL_TITLE_BG,
-                halign="center", border=BORDER_MED)
+    ws.merge_range("A1:G1", "会計データ確認シート", fmt_title)
 
-    # ── Row2: 対象月・担当 ──
-    ws.merge_cells("A2:G2")
+    # ── Row2: 対象月 ──
     period_val = period or "　　　　年　　　月分"
-    _cell_style(ws, "A2",
-                f"対象月：{period_val}　　　　　　　　　　　　　　担当：　　　　　　　",
-                size=11, bg="FFFAF6")
+    ws.merge_range("A2:G2",
+                   f"対象月：{period_val}　　　　　　　　　　　　　　担当：　　　　　　　",
+                   fmt_period)
 
     # ── Row3: 操作方法 ──
-    ws.merge_cells("A3:G3")
-    _cell_style(ws, "A3",
-                "【操作方法】　F列（対応済）の ▼ をクリック → ✓ を選択 → 行がグレーアウトされます。",
-                size=9, fg="9A7060", bg="FEF5ED")
+    ws.merge_range("A3:G3",
+                   "【操作方法】　F列（対応済）のチェックボックスをクリック → ✓ でグレーアウト、もう一度クリックで解除",
+                   fmt_instr)
 
     # ── Row4: 列ヘッダー ──
-    headers = ["勘定科目", "補助科目", "日付", "確認内容（Harel入力欄）", "ご回答", "対応済", "備考"]
-    for col_idx, h in enumerate(headers, 1):
-        coord = f"{get_column_letter(col_idx)}4"
-        _cell_style(ws, coord, h,
-                    bold=True, size=11, fg=COL_HEADER_FG, bg=COL_HEADER_BG,
-                    halign="center", border=BORDER_ALL)
+    for col, h in enumerate(
+        ["勘定科目", "補助科目", "日付", "確認内容（Harel入力欄）", "ご回答", "対応済", "備考"]
+    ):
+        ws.write(3, col, h, fmt_header)
 
-    # ── データ検証（対応済列 F）──
-    dv = DataValidation(
-        type="list", formula1='"TRUE,FALSE"',
-        allow_blank=True, showDropDown=False,
-    )
-    dv.sqref = f"F5:F{max(len(issues) + 10, 100)}"
-    ws.add_data_validation(dv)
+    # ── 条件付き書式: チェックボックス=TRUE → 行全体をグレーアウト ──
+    # xlsxwriter では F列（col 5）の checkbox が TRUE のとき F列= 1
+    done_fmt = wb.add_format({
+        "font_color": C_DONE_FG,
+        "bg_color":   C_DONE_BG,
+        "font_name":  "メイリオ",
+    })
+    last_row = max(len(issues) + 5, 50)
+    ws.conditional_format(4, 0, last_row, 6, {
+        "type":     "formula",
+        "criteria": "=$F5=TRUE",
+        "format":   done_fmt,
+    })
 
     # ── データ行 ──
-    row_idx = 5
-    prev_base_acc = None
+    prev_base = None
+    for i, issue in enumerate(issues):
+        row = 4 + i  # Excel row (0-indexed): row 4 = Excel row 5
 
-    for issue in issues:
-        full_account = str(issue.get("account", ""))
-        month        = str(issue.get("month",   ""))
-        message      = str(issue.get("message", ""))
+        full_acc = str(issue.get("account", ""))
+        month    = str(issue.get("month", ""))
+        message  = str(issue.get("message", ""))
 
-        # 勘定科目と補助科目に分解
-        if "（" in full_account and full_account.endswith("）"):
-            p      = full_account.index("（")
-            base   = full_account[:p]
-            sub    = full_account[p+1:-1]
+        # 勘定科目・補助科目に分解
+        if "（" in full_acc and full_acc.endswith("）"):
+            p    = full_acc.index("（")
+            base = full_acc[:p]
+            sub  = full_acc[p+1:-1]
         else:
-            base = full_account
+            base = full_acc
             sub  = ""
 
-        # 同じ勘定科目は2行目以降を空白
-        display_base = base if base != prev_base_acc else ""
+        display_base = base if base != prev_base else ""
         if base:
-            prev_base_acc = base
+            prev_base = base
 
-        # 日付表示
+        # 日付整形
         date_str = month
         if len(month) == 7 and month[4] == "-":
             y, m = month.split("-")
             date_str = f"{y}年{int(m)}月"
 
-        # メッセージ整形（【〇〇】プレフィックスを除去）
+        # メッセージ整形
         clean_msg = re.sub(r'^【[^】]+】', '', message).strip()
 
-        # 行背景（交互）
-        row_bg = "FFFFFF" if row_idx % 2 == 0 else COL_ROW_ALT
+        # 行背景
+        is_alt = (i % 2 == 1)
+        f_text = fmt_row_a if is_alt else fmt_row_w
+        f_ctr  = fmt_row_ca if is_alt else fmt_row_c
 
-        row_data = [display_base, sub, date_str, clean_msg, "", False, ""]
-        for col_idx, val in enumerate(row_data, 1):
-            coord  = f"{get_column_letter(col_idx)}{row_idx}"
-            halign = "center" if col_idx in (3, 6) else "left"
-            wrap   = (col_idx == 4)
-            _cell_style(ws, coord, val,
-                        size=10, bg=row_bg,
-                        halign=halign, wrap=wrap,
-                        border=BORDER_ALL)
+        ws.write(row, 0, display_base, f_text)
+        ws.write(row, 1, sub,          f_text)
+        ws.write(row, 2, date_str,     f_ctr)
+        ws.write(row, 3, clean_msg,    f_text)
+        ws.write(row, 4, "",           f_text)  # ご回答（空欄）
 
-        # 行の高さ（メッセージが長い場合）
-        lines = max(1, len(clean_msg) // 30 + clean_msg.count("\n") + 1)
-        ws.row_dimensions[row_idx].height = max(20, min(lines * 15, 60))
+        # ── F列: チェックボックス ──
+        ws.insert_checkbox(row, 5, {
+            "checked":     False,
+            "size":        {"width": 72, "height": 18},
+        })
 
-        row_idx += 1
+        ws.write(row, 6, "", f_text)  # 備考（空欄）
 
-    # ── 条件付き書式: 対応済=TRUE の行をグレーアウト ──
-    gray_fill = PatternFill(start_color=COL_DONE_BG, end_color=COL_DONE_BG,
-                            fill_type="solid")
-    gray_font = Font(color="888888", name="メイリオ")
-    ds   = DifferentialStyle(fill=gray_fill, font=gray_font)
-    rule = Rule(type="expression", dxf=ds, formula=[f'$F5=TRUE'])
-    ws.conditional_formatting.add(f"A5:G{row_idx}", rule)
-
-    # ── ウィンドウ固定（4行目まで固定）──
-    ws.freeze_panes = "A5"
+        # 行高（メッセージ長さに応じて）
+        lines = max(1, len(clean_msg) // 40 + clean_msg.count("\n") + 1)
+        ws.set_row(row, max(18, min(lines * 15, 80)))
 
 
-def _build_sample_sheet(ws):
-    """「記入例」シートを再現"""
-    ws.column_dimensions["A"].width = 18
-    ws.column_dimensions["B"].width = 22
-    ws.column_dimensions["C"].width = 12
-    ws.column_dimensions["D"].width = 60
-    ws.column_dimensions["E"].width = 25
-    ws.column_dimensions["F"].width = 10
-    ws.column_dimensions["G"].width = 20
+# ────────────────────────────────────────────────────────
+# 記入例シート
+# ────────────────────────────────────────────────────────
+def _build_sample_sheet(wb):
+    ws = wb.add_worksheet("記入例")
 
-    ws.merge_cells("A1:G1")
-    _cell_style(ws, "A1", "会計データ確認シート",
-                bold=True, size=14, fg=COL_TITLE_FG, bg=COL_TITLE_BG,
-                halign="center")
-    ws.merge_cells("A2:G2")
-    _cell_style(ws, "A2",
-                "対象月：　　　　年　　　月分　　　　　　　　　　　　　　　担当：　　　　　　　",
-                size=11)
+    fmt_title = wb.add_format({
+        "bold": True, "font_size": 14,
+        "font_name": "メイリオ",
+        "bg_color": C_TITLE_BG, "font_color": C_TITLE_FG,
+        "align": "center", "valign": "vcenter",
+    })
+    fmt_header = wb.add_format({
+        "bold": True, "font_size": 11, "font_name": "メイリオ",
+        "bg_color": C_ORANGE_PALE, "font_color": C_ORANGE_HEAD,
+        "align": "center", "valign": "vcenter",
+        "border": 1, "border_color": C_BORDER,
+    })
+    def make_fmt(bg, wrap=False):
+        return wb.add_format({
+            "font_name": "メイリオ", "font_size": 10,
+            "bg_color": bg, "valign": "vcenter",
+            "text_wrap": wrap,
+            "border": 1, "border_color": C_BORDER,
+        })
+    fw = make_fmt(C_WHITE,   True)
+    fa = make_fmt(C_ROW_ALT, True)
+    fc = make_fmt(C_WHITE)
+    fca= make_fmt(C_ROW_ALT)
 
-    headers = ["勘定科目", "補助科目", "日付", "確認内容（Harel入力欄）", "ご回答", "対応済", "備考"]
-    for i, h in enumerate(headers, 1):
-        coord = f"{get_column_letter(i)}3"
-        _cell_style(ws, coord, h, bold=True, fg=COL_HEADER_FG, bg=COL_HEADER_BG,
-                    halign="center", border=BORDER_ALL)
+    ws.set_column("A:A", 18); ws.set_column("B:B", 22)
+    ws.set_column("C:C", 12); ws.set_column("D:D", 62)
+    ws.set_column("E:E", 26); ws.set_column("F:F", 10)
+    ws.set_column("G:G", 20)
+    ws.set_row(0, 28); ws.set_row(1, 18); ws.set_row(2, 22)
+
+    ws.merge_range("A1:G1", "会計データ確認シート", fmt_title)
+    ws.merge_range("A2:G2",
+                   "対象月：　　　　年　　　月分　　　　　　　　　　　　　　　担当：　　　　　　　",
+                   wb.add_format({"font_name": "メイリオ", "font_size": 11}))
+
+    for col, h in enumerate(
+        ["勘定科目", "補助科目", "日付", "確認内容（Harel入力欄）", "ご回答", "対応済", "備考"]
+    ):
+        ws.write(2, col, h, fmt_header)
 
     samples = [
-        ("売掛金", "ｱｲﾑﾋﾞｰ", "", "3月分158,130円の回収がないようです"),
-        ("",       "ｻﾛﾝｻｻﾞﾝ", "", "4/30の売り上げが2件入っているのはないか"),
-        ("",       "諸口",    "", "前期から-1,320円残っているので確認が必要"),
-        ("買掛金",  "箔一産業", "", "３月分の仕入計上がされていないか　4/30 2,337,775円支払分"),
-        ("",       "ﾌﾟﾗﾑ",    "", "3月計上 260,271円の支払いがない　翌々月以降支払いか"),
+        ("売掛金", "ｱｲﾑﾋﾞｰ",  "", "3月分158,130円の回収がないようです"),
+        ("",      "ｻﾛﾝｻｻﾞﾝ", "", "4/30の売り上げが2件入っているのはないか"),
+        ("",      "諸口",    "", "前期から-1,320円残っているので確認が必要"),
+        ("買掛金", "箔一産業", "", "３月分の仕入計上がされていないか　4/30 2,337,775円支払分"),
+        ("",      "ﾌﾟﾗﾑ",    "", "3月計上 260,271円の支払いがない　翌々月以降支払いか"),
         ("未払費用", "役員退職金", "", "永井等さま分 30,000,000円が残っている。支払日未達で問題ないか"),
     ]
-    for r_idx, (acc, sub, date, content) in enumerate(samples, 4):
-        row_bg = "FFFFFF" if r_idx % 2 == 0 else COL_ROW_ALT
-        for c_idx, val in enumerate([acc, sub, date, content, "", False, ""], 1):
-            coord = f"{get_column_letter(c_idx)}{r_idx}"
-            _cell_style(ws, coord, val, size=10, bg=row_bg,
-                        halign="center" if c_idx in (3, 6) else "left",
-                        wrap=(c_idx == 4), border=BORDER_ALL)
+    done_fmt = wb.add_format({"font_color": C_DONE_FG, "bg_color": C_DONE_BG, "font_name": "メイリオ"})
+    ws.conditional_format(3, 0, len(samples)+5, 6, {
+        "type": "formula", "criteria": "=$F4=TRUE", "format": done_fmt,
+    })
 
-    ws.merge_cells(f"A{len(samples)+5}:G{len(samples)+5}")
-    _cell_style(ws, f"A{len(samples)+5}",
-                "【操作方法】　F列（対応済）の ▼ をクリック → ✓ を選択 → 行がグレーアウトされます。解除するには ▼ から空白（　）を選択してください。",
-                size=9, fg="9A7060", bg="FEF5ED", wrap=True)
+    for i, (acc, sub, date, content) in enumerate(samples):
+        row    = 3 + i
+        is_alt = i % 2 == 1
+        f_t = fa if is_alt else fw
+        f_c = fca if is_alt else fc
+        ws.write(row, 0, acc,     f_t)
+        ws.write(row, 1, sub,     f_t)
+        ws.write(row, 2, date,    f_c)
+        ws.write(row, 3, content, f_t)
+        ws.write(row, 4, "",      f_t)
+        ws.insert_checkbox(row, 5, {"checked": i == 0})  # 1行目だけチェック済み（例示）
+        ws.write(row, 6, "",      f_t)
+        ws.set_row(row, 22)
+
+    instr_fmt = wb.add_format({
+        "font_name": "メイリオ", "font_size": 9,
+        "font_color": C_INSTR_FG, "bg_color": C_INSTR_BG,
+        "italic": True, "text_wrap": True,
+    })
+    ws.merge_range(
+        3 + len(samples) + 1, 0,
+        3 + len(samples) + 1, 6,
+        "【操作方法】　F列（対応済）のチェックボックスをクリック → ✓ でグレーアウト、もう一度クリックで解除。",
+        instr_fmt,
+    )
