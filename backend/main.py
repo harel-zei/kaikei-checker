@@ -24,6 +24,7 @@ from checkers.tax_detail_checker import check_tax_detail
 from checkers.asset_checker import check_assets
 from checkers.ar_ap_checker import check_ar_ap
 from checkers.governance_checker import check_governance
+from export_excel import build_checksheet_xlsx
 from client_store import (
     list_clients, save_prior_files, load_prior_files,
     get_client_info, delete_prior_file, delete_client,
@@ -384,6 +385,25 @@ async def _run_checks(
         },
         "issues": issues,
     })
+
+
+@app.post("/api/export-xlsx")
+async def export_xlsx(request: Request):
+    """チェック結果を会計データ確認シート形式の xlsx として出力する"""
+    body        = await request.json()
+    issues      = body.get("issues", [])
+    period      = body.get("period", "")
+    client_name = body.get("client_name", "")
+
+    xlsx_bytes = build_checksheet_xlsx(issues, period, client_name)
+
+    filename = f"チェックシート_{client_name}_{period}.xlsx".replace(" ", "").replace("　", "")
+
+    return StreamingResponse(
+        io.BytesIO(xlsx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{_url_encode(filename)}"}
+    )
 
 
 @app.post("/api/export-csv")

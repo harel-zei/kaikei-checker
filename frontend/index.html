@@ -412,9 +412,9 @@
     <!-- CSVダウンロードボタン -->
     <div id="exportBar" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
       <div class="tabs" id="filterTabs" style="margin-bottom:0;flex:1;"></div>
-      <button onclick="exportCSV()"
+      <button onclick="exportXLSX()"
         style="background:var(--orange);color:white;border:none;padding:8px 20px;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 2px 6px rgba(244,122,32,.3);">
-        📥 チェックシートCSV出力
+        📥 チェックシート Excel出力
       </button>
     </div>
     <div class="issues" id="issueList"></div>
@@ -941,7 +941,7 @@
     `).join('');
   }
 
-  async function exportCSV() {
+  async function exportXLSX() {
     if (!window._issues || window._issues.length === 0) {
       alert('チェック結果がありません。先にチェックを実行してください。');
       return;
@@ -956,7 +956,7 @@
     }
 
     try {
-      const res = await fetch('/api/export-csv', {
+      const res = await fetch('/api/export-xlsx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -969,7 +969,7 @@
 
       const blob     = await res.blob();
       const url      = URL.createObjectURL(blob);
-      const filename = `チェックシート_${currentClient || ''}_${period}.csv`;
+      const filename = `チェックシート_${currentClient || ''}_${period}.xlsx`;
       const a        = document.createElement('a');
       a.href         = url;
       a.download     = filename;
