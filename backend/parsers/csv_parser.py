@@ -155,6 +155,11 @@ def parse_csv(content: str) -> tuple:
     return df, software
 
 
+def _is_ledger_format(content: str) -> bool:
+    """補助元帳形式かどうかを判定"""
+    return '[前期繰越' in content[:2000]
+
+
 def parse_opening_balances(content: str) -> dict:
     """
     弥生「残高試算表」または「補助残高一覧表」のエクスポートCSVから期首残高を読み込む。
@@ -274,6 +279,77 @@ def parse_opening_balances(content: str) -> dict:
     # 補助科目の積み上げ合計で主科目を上書き（より正確）
     for acc, total in sub_totals.items():
         balances[acc] = total
+
+    return balances
+
+
+def parse_opening_from_ledger(content: str) -> dict:
+    """
+    弥生「補助元帳」エクスポートCSVから期首残高（前期繰越）を抽出する。
+
+    補助元帳の [前期繰越行] 形式:
+      [前期繰越行], 部門, 勘定科目, 補助科目, ...(空)..., 残高(列26)
+
+    複数の補助元帳ファイルを個別にアップロードした場合でも
+    まとめてマージして使用できる。
+
+    Returns:
+      { "買掛金（ナカウミベトナム）": 287735399, ... }
+    """
+    balances: dict = {}
+    sub_totals: dict = {}
+
+    for line in content.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parts = list(next(pd.read_csv(
+                io.StringIO(line), header=None, quotechar='"'
+            ).itertuples(index=False)))
+        except Exception:
+            continue
+
+        parts = [str(p).strip().strip('"') for p in parts]
+        if not parts:
+            continue
+
+        tag = parts[0]
+
+        # 補助元帳の前期繰越行: [前期繰越行], 部門, 勘定科目, 補助科目, ..., 残高(26列目)
+        if '[前期繰越' in tag and len(parts) >= 4:
+            account = parts[2]
+            sub     = parts[3]
+            # 残高は列26付近を探す（空でない最後の数値列）
+            amount  = 0.0
+            # まず決まった位置(26)を試みる
+            if len(parts) > 26 and parts[26]:
+                amount = _to_num(parts[26])
+            else:
+                # フォールバック: 後ろから最初の数値を探す
+                for v in reversed(parts):
+                    try:
+                        val = float(v.replace(",", ""))
+                        if val != 0:
+                            amount = val
+                            break
+                    except Exception:
+                        continue
+
+            if not account or account in ("", "nan"):
+                continue
+
+            if sub and sub not in ("", "nan", "指定なし"):
+                key = f"{account}（{sub}）"
+                balances[key] = amount
+                sub_totals[account] = sub_totals.get(account, 0.0) + amount
+            else:
+                balances[account] = amount
+
+    # 補助科目からの積み上げで主科目を補完
+    for acc, total in sub_totals.items():
+        if acc not in balances or balances[acc] == 0:
+            balances[acc] = total
 
     return balances
 

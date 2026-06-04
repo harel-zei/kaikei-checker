@@ -8,7 +8,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from typing import List, Optional
 
-from parsers.csv_parser import parse_csv, parse_opening_balances, parse_ending_balances
+from parsers.csv_parser import (
+    parse_csv, parse_opening_balances, parse_ending_balances,
+    parse_opening_from_ledger, _is_ledger_format,
+)
 from parsers.file_detector import auto_classify_files
 from checkers.bs_checker import check_bs, estimate_last_complete_month
 from checkers.pl_checker import check_pl
@@ -37,6 +40,22 @@ def _read(raw: bytes) -> str:
         except UnicodeDecodeError:
             continue
     raise ValueError("文字コードを判定できませんでした")
+
+
+def _parse_balance_file(content: str, use_ending: bool = False) -> dict:
+    """
+    残高ファイルを適切な方法でパースする。
+    補助元帳形式（[前期繰越行]）→ parse_opening_from_ledger
+    試算表/補助残高一覧形式（[明細行]）→ parse_ending_balances or parse_opening_balances
+    """
+    if not content:
+        return {}
+    if _is_ledger_format(content):
+        return parse_opening_from_ledger(content)
+    elif use_ending:
+        return parse_ending_balances(content)
+    else:
+        return parse_opening_balances(content)
 
 
 def _merge_balances(*dicts) -> dict:
@@ -252,12 +271,12 @@ async def _run_checks(
     # 2. なければ、前期の試算表/補助残高の「期末残高」列から自動導出
     #    （前期末残高 = 当期首残高）
     ob_from_current = _merge_balances(
-        parse_opening_balances(c["balance_main_current"]) if c.get("balance_main_current") else {},
-        parse_opening_balances(c["balance_sub_current"])  if c.get("balance_sub_current")  else {},
+        _parse_balance_file(c["balance_main_current"]) if c.get("balance_main_current") else {},
+        _parse_balance_file(c["balance_sub_current"])  if c.get("balance_sub_current")  else {},
     )
     ob_from_prior = _merge_balances(
-        parse_ending_balances(c["balance_main_prior"]) if c.get("balance_main_prior") else {},
-        parse_ending_balances(c["balance_sub_prior"])  if c.get("balance_sub_prior")  else {},
+        _parse_balance_file(c["balance_main_prior"], use_ending=True) if c.get("balance_main_prior") else {},
+        _parse_balance_file(c["balance_sub_prior"],  use_ending=True) if c.get("balance_sub_prior")  else {},
     )
     # 当期首ファイルを優先、なければ前期末から導出
     ob = ob_from_current if ob_from_current else ob_from_prior
@@ -275,8 +294,8 @@ async def _run_checks(
 
     # 前期首残高（YoY比較用）: 前期試算表の「前期繰越」列から取得
     prior_ob = _merge_balances(
-        parse_opening_balances(c["balance_main_prior"]) if c.get("balance_main_prior") else {},
-        parse_opening_balances(c["balance_sub_prior"])  if c.get("balance_sub_prior")  else {},
+        _parse_balance_file(c["balance_main_prior"]) if c.get("balance_main_prior") else {},
+        _parse_balance_file(c["balance_sub_prior"])  if c.get("balance_sub_prior")  else {},
     )
 
     # ── チェック対象期間の決定 ──
