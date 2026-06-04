@@ -134,7 +134,7 @@ def _build_checksheet(wb, issues, period, client_name):
     last_row = max(len(issues) + 5, 50)
     ws.conditional_format(4, 0, last_row, 6, {
         "type":     "formula",
-        "criteria": "=$F5=TRUE",
+        "criteria": "=$F5",
         "format":   done_fmt,
     })
 
