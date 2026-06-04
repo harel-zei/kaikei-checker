@@ -13,6 +13,23 @@ from checkers.check_utils import desc_safe, month_safe, is_store_address
 
 # ─── キーワードマスタ ───
 KW_REDUCED_TAX = ["弁当", "茶", "菓子", "食料品", "土産", "お茶", "おにぎり", "サンドイッチ", "惣菜"]
+
+# 2-7: 精勤手当・永年勤続表彰（不課税）
+KW_SERVICE_AWARD = [
+    "精勤", "長期精勤", "皆勤", "永年勤続", "勤続表彰", "勤続",
+    "表彰", "永年", "長期勤続",
+]
+# 上記に加えて「手当」「賞」「金」を後ろに含む語も対象とするため
+# 関数内で複合判定する
+
+# 2-8: 新聞代（軽減税率8%対象）
+KW_NEWSPAPER = [
+    "新聞", "日経", "朝日新聞", "読売新聞", "毎日新聞", "産経新聞",
+    "日本経済新聞", "中日新聞", "北海道新聞",
+]
+
+# 2-9: 売掛金回収時の振込手数料（売上対価の返還等として処理すべき）
+WIRE_FEE_AMOUNTS = [110, 220, 330, 440, 550, 660, 770, 880]
 KW_CARD_FEE    = ["カード手数料", "EC決済", "決済手数料", "Amazon手数料", "楽天手数料",
                    "PayPay手数料", "クレジット手数料", "加盟店手数料"]
 KW_GOVT_FEE    = ["印紙", "住民票", "証明書", "登録免許税", "パスポート", "収入印紙",
@@ -57,6 +74,9 @@ def check_tax_detail(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues.extend(_check_2_4_membership_fee(df))
     issues.extend(_check_2_5_overseas_vendor(df))
     issues.extend(_check_2_6_overseas_travel(df))
+    issues.extend(_check_2_7_service_award(df))
+    issues.extend(_check_2_8_newspaper(df))
+    issues.extend(_check_2_9_wire_fee_return(df))
     return issues
 
 
@@ -239,4 +259,152 @@ def _check_2_6_overseas_travel(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "海外現地の費用・国際線航空券は不課税（対象外）となります。"
             ),
         })
+    return issues
+
+
+def _check_2_7_service_award(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    2-7: 精勤手当・永年勤続表彰などの手当・表彰金が課税仕入になっている。
+    従業員への手当・表彰は原則として消費税の課税対象外（不課税）。
+    摘要に「精勤」「永年勤続」「表彰」等のキーワードがあり、税区分が課税10%の場合を検知。
+    """
+    issues = []
+    col = "debit_tax" if "debit_tax" in df.columns else None
+    if not col:
+        return issues
+
+    def _is_award(text: str) -> bool:
+        t = str(text)
+        # 精勤・永年勤続・表彰系キーワード
+        if any(k in t for k in KW_SERVICE_AWARD):
+            return True
+        # 「〇〇手当」パターン（手当という語を含むもの）
+        if "手当" in t and any(k in t for k in ["勤", "功", "表", "精", "永"]):
+            return True
+        return False
+
+    targets = df[
+        df["description"].astype(str).apply(_is_award) &
+        df[col].astype(str).apply(_has_tax_10)
+    ]
+    for _, row in targets.iterrows():
+        issues.append({
+            "level": "error", "category": "2-7 手当・表彰金",
+            "check_id": "2-7", "account": str(row["debit_account"]),
+            "month": month_safe(row),
+            "message": (
+                f"【2-7・高】摘要「{desc_safe(row)}」は精勤手当・永年勤続表彰などと"
+                "思われますが、税区分が課税（10%）になっています。"
+                "従業員への手当・表彰金は消費税の課税対象外（不課税）です。"
+                "税区分を「対象外」に修正してください。"
+            ),
+        })
+    return issues
+
+
+def _check_2_8_newspaper(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    2-8: 新聞代が10%になっている（軽減税率8%の対象）。
+    定期購読の新聞は軽減税率（8%）の対象。
+    """
+    issues = []
+    col = "debit_tax" if "debit_tax" in df.columns else None
+    if not col:
+        return issues
+
+    targets = df[
+        df["description"].astype(str).apply(lambda x: _has_keyword(x, KW_NEWSPAPER)) &
+        df[col].astype(str).apply(_has_tax_10)
+    ]
+    for _, row in targets.iterrows():
+        issues.append({
+            "level": "warning", "category": "2-8 新聞軽減税率",
+            "check_id": "2-8", "account": str(row["debit_account"]),
+            "month": month_safe(row),
+            "message": (
+                f"【2-8・中】摘要「{desc_safe(row)}」は新聞代と思われますが、"
+                "税区分が課税（10%）になっています。"
+                "定期購読の新聞は軽減税率（8%）の対象です。税区分を8%に修正してください。"
+            ),
+        })
+    return issues
+
+
+def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    2-9: 売掛金回収時の振込手数料が課税仕入（10%）になっている。
+    取引先が振込手数料を差し引いて入金してきた場合、その手数料は
+    「売上対価の返還等（10%）」として処理すべきで、課税仕入ではない。
+
+    検知パターン:
+    - 勘定科目が「通信費」または「支払手数料」
+    - 金額が振込手数料相当（110〜880円）
+    - 税区分が課税（10%）
+    - 同一伝票または同日に「売掛金」の貸方仕訳がある
+    """
+    issues = []
+    col = "debit_tax" if "debit_tax" in df.columns else None
+    if not col:
+        return issues
+
+    # 振込手数料候補：通信費・支払手数料で少額かつ課税10%
+    fee_mask = (
+        df["debit_account"].astype(str).str.contains("通信費|支払手数料", na=False) &
+        df["debit_amount"].isin(WIRE_FEE_AMOUNTS) &
+        df[col].astype(str).apply(_has_tax_10)
+    )
+    fee_entries = df[fee_mask].copy()
+    if fee_entries.empty:
+        return issues
+
+    # 摘要から「売上金回収」「売上振込」などのキーワードで絞り込む
+    # （退職金支払・前渡金支払など売掛金回収と無関係なものを除外）
+    KW_AR_COLLECTION = ["売上金回収", "売上振込", "売掛金回収", "掛代金回収", "回収"]
+    KW_EXCLUDE_FEE   = ["前渡金", "退職金", "接待", "消耗品", "損害保険", "大阪商工",
+                        "証明書", "インターネット", "支払分"]
+
+    def _is_ar_wire_fee(desc: str) -> bool:
+        d = str(desc)
+        # 明らかに売上回収と無関係なものは除外
+        if any(k in d for k in KW_EXCLUDE_FEE):
+            return False
+        # 「振込手数料」かつ「回収」関連 → 対象
+        if "振込手数料" in d and any(k in d for k in KW_AR_COLLECTION):
+            return True
+        # 「振込手数料/〇〇　〇月売上」パターン
+        if "振込手数料/" in d:
+            return True
+        return False
+
+    # 摘要キーワードで絞り込んだ候補
+    fee_entries = fee_entries[
+        fee_entries["description"].astype(str).apply(_is_ar_wire_fee)
+    ]
+
+    for _, row in fee_entries.iterrows():
+        # 確認: 同一伝票に売掛金の貸方がある
+        has_ar = False
+        if "slip_no" in df.columns:
+            slip = str(row.get("slip_no", ""))
+            same_slip = df[df["slip_no"].astype(str) == slip]
+            has_ar = same_slip["credit_account"].astype(str).str.contains("売掛金", na=False).any()
+        if not has_ar:
+            # 同日に売掛金貸方があるか
+            ar_credit_dates = set(df[df["credit_account"].astype(str).str.contains("売掛金", na=False)]["date"].dropna())
+            has_ar = pd.notna(row["date"]) and row["date"] in ar_credit_dates
+
+        if has_ar:
+            issues.append({
+                "level": "error", "category": "2-9 振込手数料返還",
+                "check_id": "2-9", "account": str(row["debit_account"]),
+                "month": month_safe(row),
+                "message": (
+                    f"【2-9・高】{row['debit_account']} {row['debit_amount']:,.0f}円"
+                    + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
+                    + "は売掛金回収時に差し引かれた振込手数料と思われます。"
+                    "この手数料は「課税仕入（10%）」ではなく"
+                    "「売上対価の返還等（10%）」として処理してください。"
+                    "（返還インボイスの交付義務は1万円未満なら免除）"
+                ),
+            })
     return issues
