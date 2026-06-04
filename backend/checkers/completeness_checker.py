@@ -8,6 +8,28 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict, Any
 
+
+def get_fiscal_period(date: pd.Timestamp, cutoff_day: int = 1) -> pd.Period:
+    """
+    締め日に基づいて仕訳日付が属する「会計月」を返す。
+
+    例: cutoff_day=20（20日締め）
+      - 12月21日〜1月20日 → 「12月度」（前月）
+      - 1月21日〜2月20日 → 「1月度」
+
+    cutoff_day=1（月末締め）の場合は通常の暦月と同じ。
+    """
+    if cutoff_day <= 1:
+        return date.to_period("M")
+    if date.day <= cutoff_day:
+        # この日付は「前月度」に属する
+        y, m = date.year, date.month - 1
+        if m == 0:
+            m, y = 12, y - 1
+        return pd.Period(year=y, month=m, freq="M")
+    else:
+        return date.to_period("M")
+
 # 1-1: 毎月必ず発生すべき定例科目
 RECURRING_ACCOUNTS = [
     "地代家賃", "賃借料", "リース料",
@@ -28,9 +50,9 @@ PL_KEYWORDS = [
 ]
 
 
-def check_completeness(df: pd.DataFrame) -> List[Dict[str, Any]]:
+def check_completeness(df: pd.DataFrame, fiscal_cutoff_day: int = 1) -> List[Dict[str, Any]]:
     issues = []
-    issues.extend(_check_1_1_recurring(df))
+    issues.extend(_check_1_1_recurring(df, fiscal_cutoff_day))
     issues.extend(_check_1_2_month_end_timing(df))
     issues.extend(_check_1_3_dept_anomaly(df))
     return issues
@@ -39,34 +61,43 @@ def check_completeness(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # ──────────────────────────────────────────────────────────
 # 1-1: 定例費用の発生漏れ
 # ──────────────────────────────────────────────────────────
-def _check_1_1_recurring(df: pd.DataFrame) -> List[Dict[str, Any]]:
+def _check_1_1_recurring(df: pd.DataFrame, fiscal_cutoff_day: int = 1) -> List[Dict[str, Any]]:
+    """
+    定例費用の発生漏れチェック。
+    fiscal_cutoff_day: 月次締め日。20なら「12/21〜1/20」を1つの会計月として集計。
+    """
     issues = []
     if df["date"].dropna().empty:
         return issues
 
-    all_periods = pd.period_range(
-        start=df["date"].dropna().min().to_period("M"),
-        end=df["date"].dropna().max().to_period("M"),
-        freq="M"
+    # 締め日に基づく会計月を計算
+    df = df.copy()
+    df["_fiscal_period"] = df["date"].apply(
+        lambda d: get_fiscal_period(d, fiscal_cutoff_day) if pd.notna(d) else pd.NaT
     )
+
+    all_periods = sorted(df["_fiscal_period"].dropna().unique())
+    if not all_periods:
+        return issues
 
     for account in RECURRING_ACCOUNTS:
         mask = df["debit_account"].astype(str).str.contains(account, na=False)
         entries = df[mask]
         if entries.empty:
-            continue  # そもそも使われていない科目はスキップ
+            continue
 
-        monthly = entries.groupby(df[mask]["date"].dt.to_period("M"))["debit_amount"].sum()
+        monthly = entries.groupby(entries["_fiscal_period"])["debit_amount"].sum()
         missing = [p for p in all_periods if p not in monthly.index or monthly[p] == 0]
 
         if missing:
             s = ", ".join(str(m) for m in missing[:3])
             suffix = f"（他{len(missing)-3}ヶ月）" if len(missing) > 3 else ""
+            period_note = f"（締め日:{fiscal_cutoff_day}日基準）" if fiscal_cutoff_day > 1 else ""
             issues.append({
                 "level": "error", "category": "1-1 定例費用漏れ",
                 "check_id": "1-1", "account": account, "month": s,
                 "message": (
-                    f"【1-1・高】{account} が計上されていない月があります: {s}{suffix}。"
+                    f"【1-1・高】{account} が計上されていない月があります: {s}{suffix}{period_note}。"
                     "毎月発生すべき定例費用のため、計上漏れまたは科目誤りの可能性があります。"
                 ),
             })

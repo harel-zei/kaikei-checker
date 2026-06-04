@@ -136,7 +136,8 @@ def delete_client(client_name: str) -> bool:
 # ── クライアント設定（除外科目など）──────────────────────────
 
 DEFAULT_SETTINGS = {
-    "exclude_accounts": [],   # チェック対象外の勘定科目リスト（例: ["売掛金","受取手形"]）
+    "exclude_accounts":   [],  # チェック対象外の勘定科目リスト（例: ["売掛金","受取手形"]）
+    "fiscal_cutoff_day":  1,   # 月次締め日（1=月末, 20=20日締めなど）
 }
 
 

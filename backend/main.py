@@ -313,8 +313,9 @@ async def _run_checks(
         except Exception:
             pass  # 不正な形式は無視
 
-    # ── 除外科目の設定 ──
-    exclude_accounts = (client_settings or {}).get("exclude_accounts", [])
+    # ── 除外科目・締め日の設定 ──
+    exclude_accounts   = (client_settings or {}).get("exclude_accounts", [])
+    fiscal_cutoff_day  = int((client_settings or {}).get("fiscal_cutoff_day", 1))
     issues = []
     issues.extend(check_bs(df, ob, exclude_accounts=exclude_accounts))
     issues.extend(check_pl(df))
@@ -333,7 +334,7 @@ async def _run_checks(
     else:
         df_checked = df_current
 
-    try: issues.extend(check_completeness(df_checked))
+    try: issues.extend(check_completeness(df_checked, fiscal_cutoff_day))
     except Exception: pass
     try: issues.extend(check_tax_detail(df_checked))
     except Exception: pass

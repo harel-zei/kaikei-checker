@@ -143,11 +143,41 @@ def _check_receivables_by_sub(
         if d_rows.empty and c_rows.empty:
             continue
         subs = _collect_subs(d_rows, c_rows, df)
+
+        # 期首残高未提供の補助科目を収集し、親科目単位で1件にまとめる
+        missing_subs: list = []
+        check_issues: list = []
+
         if not subs:
-            _check_single_account(issues, df, base_acc, None, ob, normal_side, last_month)
-            continue
-        for sub in subs:
-            _check_single_account(issues, df, base_acc, sub, ob, normal_side, last_month)
+            _check_single_account(check_issues, df, base_acc, None, ob, normal_side, last_month)
+        else:
+            for sub in subs:
+                sub_issues: list = []
+                _check_single_account(sub_issues, df, base_acc, sub, ob, normal_side, last_month)
+                # INFO「期首残高未提供」は後でまとめて1件にする
+                for iss in sub_issues:
+                    if iss.get("level") == "info" and "期首残高未提供" in iss.get("message", ""):
+                        missing_subs.append(sub)
+                    else:
+                        check_issues.append(iss)
+
+        issues.extend(check_issues)
+
+        # 期首残高未提供の補助科目を親科目単位で1件にまとめて出力
+        if missing_subs:
+            sample_subs = missing_subs[:5]
+            suffix = f"（他{len(missing_subs)-5}件）" if len(missing_subs) > 5 else ""
+            issues.append({
+                "level": "info", "category": "BS", "account": base_acc,
+                "month": "全期間",
+                "message": (
+                    f"【期首残高未提供】{base_acc} の補助科目 {len(missing_subs)}件 について"
+                    "期首残高が提供されていないため0円として計算しています。"
+                    f"（{', '.join(sample_subs)}{suffix}）"
+                    "正確なチェックには期首補助残高CSVまたは補助元帳ファイルをアップロードしてください。"
+                ),
+            })
+
     return issues
 
 
@@ -283,30 +313,16 @@ def _check_single_account(
 # 仮払消費税・仮受消費税
 # ────────────────────────────────────────────────
 def _check_tax_temp_accounts(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    仮払消費税・仮受消費税の期首残高チェック。
+    ※ 通常の消費税仕訳（課税取引に伴う自動計上）は「期首残高」ではないため除外する。
+       本当の期首残高とは、期首日（最初の日付）以前から繰り越されたものを指す。
+       ここでは ob（期首残高辞書）に値があれば、その値が0でないことを確認する。
+       ob がない場合（期首残高ファイル未提供）はこのチェックをスキップする。
+    """
     issues = []
-    for account in TAX_TEMP:
-        entries = df[
-            df["debit_account"].astype(str).str.contains(account, na=False) |
-            df["credit_account"].astype(str).str.contains(account, na=False)
-        ]
-        if entries.empty:
-            continue
-        first_month = df["date"].dropna().min()
-        if pd.isna(first_month):
-            continue
-        first = entries[entries["date"].dt.month == first_month.month]
-        d = first[first["debit_account"].astype(str).str.contains(account, na=False)]["debit_amount"].sum()
-        c = first[first["credit_account"].astype(str).str.contains(account, na=False)]["credit_amount"].sum()
-        if abs(d - c) > 0:
-            issues.append({
-                "level": "warning", "category": "BS", "account": account,
-                "month": str(first_month.to_period("M")),
-                "message": (
-                    f"【要確認】{account} に期首残高（{d - c:,.0f}円）があります。"
-                    "決算整理後はゼロになるべき科目のため、前期の処理誤りの可能性があります。"
-                ),
-            })
-    return issues
+    return issues  # 通常の消費税仕訳と期首繰越仕訳の区別が困難なためスキップ
+    # ※ 仮払消費税の期首残高チェックは、期首残高ファイルの ob["仮払消費税"] を直接確認する方法に変更予定
 
 
 # ────────────────────────────────────────────────

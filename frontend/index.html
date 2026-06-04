@@ -288,6 +288,19 @@
         placeholder="例:&#10;売掛金&#10;受取手形&#10;電子記録債権"></textarea>
       <p style="font-size:.76rem;color:#c09070;margin-top:6px;">※ 入力した科目名を含むすべての補助科目もチェック対象外になります</p>
 
+      <hr style="margin:18px 0;border-color:#f0c090;">
+
+      <div style="font-size:.85rem;font-weight:700;color:#2c1f10;margin-bottom:8px;">📅 月次締め日</div>
+      <p style="font-size:.8rem;color:#9a7060;margin-bottom:10px;line-height:1.6;">
+        月次の締め日を設定します。20日締めの場合は「20」と入力してください。<br>
+        定例費用（減価償却費など）の計上漏れチェックに使用されます。
+      </p>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" id="fiscalCutoffInput" min="1" max="31" value="1"
+          style="width:80px;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.9rem;background:#fdf9f5;">
+        <span style="font-size:.85rem;color:#9a7060;">日締め（1 = 月末締め）</span>
+      </div>
+
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
         <button class="btn btn-secondary" onclick="closeSettingsModal()">キャンセル</button>
         <button class="btn btn-primary" onclick="saveSettings()">保存する</button>
@@ -679,6 +692,7 @@
       const data = await res.json();
       const accounts = (data.exclude_accounts || []).join('\n');
       document.getElementById('excludeAccountsInput').value = accounts;
+      document.getElementById('fiscalCutoffInput').value = data.fiscal_cutoff_day || 1;
     } catch(e) {
       document.getElementById('excludeAccountsInput').value = '';
     }
@@ -695,7 +709,10 @@
       const res = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ exclude_accounts: accounts }),
+        body: JSON.stringify({
+        exclude_accounts:  accounts,
+        fiscal_cutoff_day: parseInt(document.getElementById('fiscalCutoffInput').value) || 1,
+      }),
       });
       const data = await res.json();
       closeSettingsModal();
