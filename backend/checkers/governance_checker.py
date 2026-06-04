@@ -104,6 +104,11 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 continue
             if ri["debit_account"] != rj["debit_account"]:
                 continue
+            # 補助科目が異なる場合は別取引 → 重複ではない
+            sub_i = str(ri.get("debit_sub", "")).strip()
+            sub_j = str(rj.get("debit_sub", "")).strip()
+            if sub_i != sub_j and sub_i not in ("", "nan") and sub_j not in ("", "nan"):
+                continue
             if pd.isna(ri["date"]) or pd.isna(rj["date"]):
                 continue
 
