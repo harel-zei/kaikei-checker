@@ -284,9 +284,13 @@ async def _run_checks(
     if check_until:
         try:
             import pandas as pd
-            specified = pd.Period(check_until, freq="M")
-            if specified < last_month:
-                last_month = specified   # ユーザー指定が優先
+            # "2026-05-20" (日付) または "2026-05" (月) の両形式に対応
+            specified_ts = pd.Timestamp(check_until)
+            specified_period = specified_ts.to_period("M")
+            if specified_period <= last_month:
+                last_month = specified_period
+                # 日付指定の場合はdfもその日付以下に絞る
+                df = df[df["date"] <= specified_ts].copy()
         except Exception:
             pass  # 不正な形式は無視
 
@@ -345,8 +349,9 @@ async def _run_checks(
             "has_ob":            bool(ob),
             "ob_source":         ob_source,
             "ob_accounts":       len(ob),
-            "check_until":       str(last_month),
-            "exclude_accounts":  exclude_accounts,
+            "check_until":        str(last_month),
+            "check_until_input":  check_until or "",   # ユーザー指定値（表示用）
+            "exclude_accounts":   exclude_accounts,
             "has_prior_journal": prior_df is not None,
             "has_prior_bal":     bool(prior_ob),
             "date_range": {

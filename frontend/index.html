@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>会計データチェックシステム</title>
+  <!-- Flatpickr カレンダーライブラリ -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_orange.css">
   <style>
     /* ══ Pattern C: ソフトアンバー ══ */
     :root {
@@ -346,18 +349,25 @@
 
     <!-- チェック対象期間 -->
     <div style="margin-bottom:16px;padding:14px 16px;background:#fdf9f5;border:1.5px solid #f0c090;border-radius:10px;">
-      <div style="font-size:.85rem;font-weight:700;color:#7a3800;margin-bottom:8px;">📅 チェック対象期間</div>
+      <div style="font-size:.85rem;font-weight:700;color:#7a3800;margin-bottom:10px;">📅 チェック対象期間</div>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <div style="font-size:.85rem;color:#9a7060;">〜</div>
-        <select id="checkUntilSelect"
-                style="padding:7px 12px;border:1.5px solid #e8d5c0;border-radius:8px;font-size:.88rem;background:#fff;color:#2c1f10;min-width:160px;">
-          <option value="">最終入力月まで（自動）</option>
-        </select>
-        <span style="font-size:.8rem;color:#9a7060;">まで対象とする</span>
-        <button onclick="clearPeriod()" style="font-size:.78rem;color:#c05810;background:none;border:none;cursor:pointer;text-decoration:underline;">リセット</button>
+        <span style="font-size:.85rem;color:#9a7060;">〜</span>
+        <!-- Flatpickr カレンダー入力 -->
+        <div style="position:relative;display:flex;align-items:center;gap:8px;">
+          <input id="checkUntilInput" type="text" readonly placeholder="カレンダーから選択"
+            style="padding:8px 14px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.88rem;
+                   background:#fff;color:#2c1f10;min-width:180px;cursor:pointer;">
+          <span style="font-size:1.1rem;cursor:pointer;" onclick="document.getElementById('checkUntilInput')._flatpickr?.open()">📆</span>
+        </div>
+        <span style="font-size:.85rem;color:#9a7060;">まで対象とする</span>
+        <span id="checkUntilLabel" style="font-size:.82rem;color:#9a7060;"></span>
+        <button id="clearPeriodBtn" onclick="clearPeriod()"
+                style="font-size:.78rem;color:#c05810;background:none;border:none;cursor:pointer;text-decoration:underline;">
+          リセット
+        </button>
       </div>
-      <p style="font-size:.78rem;color:#9a7060;margin-top:6px;">
-        ※ 未来日付の仕訳が含まれる場合など、チェック範囲を月単位で限定できます
+      <p style="font-size:.78rem;color:#9a7060;margin-top:8px;">
+        ※ 締め日が20日の場合は「5月20日」のように日付単位で指定できます。未指定の場合は最終入力月まで自動で判定します。
       </p>
     </div>
 
@@ -701,44 +711,15 @@
   // ════════════════════════════════════
   // チェック対象期間セレクター
   // ════════════════════════════════════
-  function buildPeriodOptions(startYM, endYM) {
-    const sel   = document.getElementById('checkUntilSelect');
-    const saved = sel.value;
-    sel.innerHTML = '<option value="">最終入力月まで（自動）</option>';
-
-    // 範囲が指定されていない場合は直近24ヶ月を表示
-    const now = new Date();
-    if (!startYM || !endYM) {
-      endYM   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-      const d = new Date(now.getFullYear(), now.getMonth() - 23, 1);
-      startYM = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    }
-
-    let [sy, sm] = startYM.split('-').map(Number);
-    let [ey, em] = endYM.split('-').map(Number);
-    const months = [];
-    while (sy < ey || (sy === ey && sm <= em)) {
-      months.push(`${sy}-${String(sm).padStart(2,'0')}`);
-      sm++; if (sm > 12) { sm = 1; sy++; }
-    }
-    months.reverse();
-    months.forEach(m => {
-      const opt     = document.createElement('option');
-      opt.value     = m;
-      const [y, mo] = m.split('-');
-      opt.textContent = `${y}年${parseInt(mo)}月まで`;
-      if (m === saved) opt.selected = true;
-      sel.appendChild(opt);
-    });
-  }
-
   function clearPeriod() {
-    document.getElementById('checkUntilSelect').value = '';
+    const fp = document.getElementById('checkUntilInput')?._flatpickr;
+    if (fp) fp.clear();
+    const label = document.getElementById('checkUntilLabel');
+    if (label) { label.textContent = ''; }
   }
 
   // 初期化
   loadClientList();
-  buildPeriodOptions();   // ページ読み込み時に直近24ヶ月を生成
 
   // ════════════════════════════════════
   // ファイルアップロード
@@ -814,7 +795,7 @@
     const fd = new FormData();
     for (const f of selectedFiles) fd.append('files', f.file);
     if (currentClient) fd.append('client_name', currentClient);
-    const checkUntil = document.getElementById('checkUntilSelect').value;
+    const checkUntil = document.getElementById('checkUntilInput').value;
     if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
@@ -851,12 +832,10 @@
       log.map(l => `<div>${l}</div>`).join('') || '<div>（ログなし）</div>';
 
     // メタ情報
-    // 期間セレクターを更新
-    if (summary.date_range) {
-      buildPeriodOptions(summary.date_range.start?.slice(0,7), summary.date_range.end?.slice(0,7));
-    }
-    if (summary.check_until) {
-      document.getElementById('checkUntilSelect').value = summary.check_until;
+    // Flatpickr の範囲を実データに合わせて制限（任意）
+    if (summary.date_range && window.fpInstance) {
+      fpInstance.set('minDate', summary.date_range.start);
+      fpInstance.set('maxDate', summary.date_range.end);
     }
 
     const obLabel    = summary.ob_source && summary.ob_source !== 'なし'
@@ -866,8 +845,11 @@
     const priorBadge = summary.has_prior_journal ? '<span class="bg-p">前期比較あり</span>' : '';
     const excl = summary.exclude_accounts?.length > 0
       ? `<span style="background:#fef5ed;color:#c05810;border-radius:6px;padding:2px 8px;font-size:.73rem;font-weight:600;">🚫 除外: ${summary.exclude_accounts.join('・')}</span>` : '';
-    const periodBadge = summary.check_until
-      ? `<span style="background:#fef5ed;color:#c05810;border-radius:6px;padding:2px 8px;font-size:.73rem;font-weight:600;">📅 〜${summary.check_until}まで</span>` : '';
+    const periodLabel = summary.check_until_input
+      ? summary.check_until_input   // "2026-05-20" のような日付
+      : (summary.check_until || '');
+    const periodBadge = periodLabel
+      ? `<span style="background:#fef5ed;color:#c05810;border-radius:6px;padding:2px 8px;font-size:.73rem;font-weight:600;">📅 〜${periodLabel}まで</span>` : '';
 
     document.getElementById('metaInfo').innerHTML = `
       <span>📁 <strong>${summary.software}</strong></span>
@@ -948,6 +930,37 @@
       window._issues.filter(i => i.level === key);
     renderIssues(filtered);
   }
+</script>
+
+<!-- Flatpickr JS + 日本語ロケール -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ja.js"></script>
+<script>
+  // カレンダーを初期化
+  const fpInstance = flatpickr("#checkUntilInput", {
+    locale: "ja",
+    dateFormat: "Y-m-d",
+    allowInput: true,
+    disableMobile: false,
+    onReady: function(_, __, fp) {
+      // クリアボタンのカスタマイズ
+      const clearBtn = document.getElementById('clearPeriodBtn');
+      if (clearBtn) clearBtn.addEventListener('click', () => fp.clear());
+    },
+    onChange: function(dates, dateStr) {
+      const label = document.getElementById('checkUntilLabel');
+      if (dateStr && label) {
+        const d = dates[0];
+        label.textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日まで`;
+        label.style.color = '#c05810';
+        label.style.fontWeight = '600';
+      } else if (label) {
+        label.textContent = '日付を選択';
+        label.style.color = '#9a7060';
+        label.style.fontWeight = 'normal';
+      }
+    }
+  });
 </script>
 </body>
 </html>
