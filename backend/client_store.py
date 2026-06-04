@@ -133,6 +133,43 @@ def delete_client(client_name: str) -> bool:
     return True
 
 
+# ── クライアント設定（除外科目など）──────────────────────────
+
+DEFAULT_SETTINGS = {
+    "exclude_accounts": [],   # チェック対象外の勘定科目リスト（例: ["売掛金","受取手形"]）
+}
+
+
+def get_client_settings(client_name: str) -> dict:
+    """クライアントのチェック設定を取得する。存在しなければデフォルトを返す"""
+    d = DATA_DIR / client_name
+    if not d.is_dir():
+        return dict(DEFAULT_SETTINGS)
+    settings_path = d / "settings.json"
+    if not settings_path.exists():
+        return dict(DEFAULT_SETTINGS)
+    try:
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        # デフォルトキーを補完
+        for k, v in DEFAULT_SETTINGS.items():
+            data.setdefault(k, v)
+        return data
+    except Exception:
+        return dict(DEFAULT_SETTINGS)
+
+
+def save_client_settings(client_name: str, settings: dict) -> dict:
+    """クライアントのチェック設定を保存する"""
+    d = _client_dir(client_name)
+    # 既知キーのみ保存（不正なキーを除外）
+    safe = {k: settings.get(k, v) for k, v in DEFAULT_SETTINGS.items()}
+    (d / "settings.json").write_text(
+        json.dumps(safe, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+    return safe
+
+
 # ── 内部ユーティリティ ──
 def _load_meta(d: Path) -> dict:
     meta_path = d / "meta.json"

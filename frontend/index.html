@@ -261,8 +261,33 @@
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-secondary" style="font-size:.82rem;padding:6px 16px;"
                 onclick="openSaveModal()">前期データを更新</button>
+        <button class="btn btn-secondary" style="font-size:.82rem;padding:6px 16px;"
+                onclick="openSettingsModal()">⚙️ チェック設定</button>
         <button class="btn" style="font-size:.82rem;padding:6px 16px;background:#fef2f2;color:#dc2626;"
                 onclick="confirmDeleteClient()">クライアントを削除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ チェック設定モーダル ══ -->
+  <div id="settingsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:14px;padding:28px 32px;max-width:540px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18);">
+      <div style="font-size:1rem;font-weight:700;margin-bottom:6px;">⚙️ チェック設定</div>
+      <div style="font-size:.82rem;color:#9a7060;margin-bottom:18px;">クライアント: <strong id="settingsClientName"></strong></div>
+
+      <div style="font-size:.85rem;font-weight:700;color:#2c1f10;margin-bottom:8px;">🚫 チェック対象外の勘定科目</div>
+      <p style="font-size:.8rem;color:#9a7060;margin-bottom:10px;line-height:1.6;">
+        補助科目が意味をなしていない科目など、残高チェックをスキップしたい科目を設定します。<br>
+        複数ある場合は改行して入力してください。
+      </p>
+      <textarea id="excludeAccountsInput"
+        style="width:100%;height:110px;padding:10px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.88rem;font-family:inherit;resize:vertical;background:#fdf9f5;"
+        placeholder="例:&#10;売掛金&#10;受取手形&#10;電子記録債権"></textarea>
+      <p style="font-size:.76rem;color:#c09070;margin-top:6px;">※ 入力した科目名を含むすべての補助科目もチェック対象外になります</p>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+        <button class="btn btn-secondary" onclick="closeSettingsModal()">キャンセル</button>
+        <button class="btn btn-primary" onclick="saveSettings()">保存する</button>
       </div>
     </div>
   </div>
@@ -317,6 +342,23 @@
       <strong>📌 残高CSV（試算表・補助残高）のフォーマット</strong><br>
       弥生の「残高試算表」「補助残高一覧表」エクスポートをそのままアップロードできます。<br>
       手入力の場合: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">勘定科目, 補助科目, 期首残高</code>（例: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">普通預金, 永和信用金庫・梅田, 5000000</code>）
+    </div>
+
+    <!-- チェック対象期間 -->
+    <div style="margin-bottom:16px;padding:14px 16px;background:#fdf9f5;border:1.5px solid #f0c090;border-radius:10px;">
+      <div style="font-size:.85rem;font-weight:700;color:#7a3800;margin-bottom:8px;">📅 チェック対象期間</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="font-size:.85rem;color:#9a7060;">〜</div>
+        <select id="checkUntilSelect"
+                style="padding:7px 12px;border:1.5px solid #e8d5c0;border-radius:8px;font-size:.88rem;background:#fff;color:#2c1f10;min-width:160px;">
+          <option value="">最終入力月まで（自動）</option>
+        </select>
+        <span style="font-size:.8rem;color:#9a7060;">まで対象とする</span>
+        <button onclick="clearPeriod()" style="font-size:.78rem;color:#c05810;background:none;border:none;cursor:pointer;text-decoration:underline;">リセット</button>
+      </div>
+      <p style="font-size:.78rem;color:#9a7060;margin-top:6px;">
+        ※ 未来日付の仕訳が含まれる場合など、チェック範囲を月単位で限定できます
+      </p>
     </div>
 
     <div class="btn-row">
@@ -615,6 +657,78 @@
     }
   }
 
+  // ════════════════════════════════════
+  // チェック設定モーダル
+  // ════════════════════════════════════
+  async function openSettingsModal() {
+    if (!currentClient) return alert('クライアントを選択してください');
+    document.getElementById('settingsClientName').textContent = currentClient;
+    // 既存設定を読み込む
+    try {
+      const res  = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/settings`);
+      const data = await res.json();
+      const accounts = (data.exclude_accounts || []).join('\n');
+      document.getElementById('excludeAccountsInput').value = accounts;
+    } catch(e) {
+      document.getElementById('excludeAccountsInput').value = '';
+    }
+    document.getElementById('settingsModal').style.display = 'flex';
+  }
+  function closeSettingsModal() {
+    document.getElementById('settingsModal').style.display = 'none';
+  }
+  async function saveSettings() {
+    if (!currentClient) return;
+    const raw = document.getElementById('excludeAccountsInput').value;
+    const accounts = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    try {
+      const res = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exclude_accounts: accounts }),
+      });
+      const data = await res.json();
+      closeSettingsModal();
+      const msg = accounts.length > 0
+        ? `✅ 設定を保存しました。\n除外科目: ${accounts.join('、')}`
+        : '✅ 設定を保存しました（除外科目なし）';
+      alert(msg);
+    } catch(e) {
+      alert('エラー: ' + e.message);
+    }
+  }
+
+  // ════════════════════════════════════
+  // チェック対象期間セレクター
+  // ════════════════════════════════════
+  function buildPeriodOptions(startYM, endYM) {
+    // startYM, endYM: "YYYY-MM" 形式
+    const sel = document.getElementById('checkUntilSelect');
+    const saved = sel.value;
+    sel.innerHTML = '<option value="">最終入力月まで（自動）</option>';
+    if (!startYM || !endYM) return;
+    let [sy, sm] = startYM.split('-').map(Number);
+    let [ey, em] = endYM.split('-').map(Number);
+    const months = [];
+    while (sy < ey || (sy === ey && sm <= em)) {
+      months.push(`${sy}-${String(sm).padStart(2,'0')}`);
+      sm++; if (sm > 12) { sm = 1; sy++; }
+    }
+    months.reverse();
+    months.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      const [y, mo] = m.split('-');
+      opt.textContent = `${y}年${parseInt(mo)}月まで`;
+      if (m === saved) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
+  function clearPeriod() {
+    document.getElementById('checkUntilSelect').value = '';
+  }
+
   // 初期化
   loadClientList();
 
@@ -692,6 +806,8 @@
     const fd = new FormData();
     for (const f of selectedFiles) fd.append('files', f.file);
     if (currentClient) fd.append('client_name', currentClient);
+    const checkUntil = document.getElementById('checkUntilSelect').value;
+    if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
       const res  = await fetch('/api/check-auto', { method: 'POST', body: fd });
@@ -727,16 +843,29 @@
       log.map(l => `<div>${l}</div>`).join('') || '<div>（ログなし）</div>';
 
     // メタ情報
+    // 期間セレクターを更新
+    if (summary.date_range) {
+      buildPeriodOptions(summary.date_range.start?.slice(0,7), summary.date_range.end?.slice(0,7));
+    }
+    if (summary.check_until) {
+      document.getElementById('checkUntilSelect').value = summary.check_until;
+    }
+
     const obLabel    = summary.ob_source && summary.ob_source !== 'なし'
       ? `期首残高あり（${summary.ob_accounts}科目・${summary.ob_source}）`
       : `期首残高あり（${summary.ob_accounts}科目）`;
     const obBadge    = summary.has_ob ? `<span class="bg-g">${obLabel}</span>` : '<span class="bg-r">期首残高なし</span>';
     const priorBadge = summary.has_prior_journal ? '<span class="bg-p">前期比較あり</span>' : '';
+    const excl = summary.exclude_accounts?.length > 0
+      ? `<span style="background:#fef5ed;color:#c05810;border-radius:6px;padding:2px 8px;font-size:.73rem;font-weight:600;">🚫 除外: ${summary.exclude_accounts.join('・')}</span>` : '';
+    const periodBadge = summary.check_until
+      ? `<span style="background:#fef5ed;color:#c05810;border-radius:6px;padding:2px 8px;font-size:.73rem;font-weight:600;">📅 〜${summary.check_until}まで</span>` : '';
+
     document.getElementById('metaInfo').innerHTML = `
       <span>📁 <strong>${summary.software}</strong></span>
       <span>📅 <strong>${summary.date_range.start} ～ ${summary.date_range.end}</strong></span>
       <span>📋 仕訳 <strong>${summary.total_entries.toLocaleString()}件</strong></span>
-      ${obBadge} ${priorBadge}
+      ${obBadge} ${priorBadge} ${excl} ${periodBadge}
     `;
 
     // サマリー

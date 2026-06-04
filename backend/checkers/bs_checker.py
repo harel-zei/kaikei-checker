@@ -44,13 +44,21 @@ def estimate_last_complete_month(df: pd.DataFrame) -> "pd.Period":
     return complete.index[-1] if not complete.empty else monthly_counts.index[-1]
 
 
-def check_bs(df: pd.DataFrame, opening_balances: dict = None) -> List[Dict[str, Any]]:
+def check_bs(
+    df: pd.DataFrame,
+    opening_balances: dict = None,
+    exclude_accounts: list = None,
+) -> List[Dict[str, Any]]:
     ob = opening_balances or {}
+    excl = exclude_accounts or []
     last_month = estimate_last_complete_month(df)  # 最終会計入力月を推定
     issues = []
     issues.extend(_check_cash_balance(df, ob))
-    issues.extend(_check_receivables_by_sub(df, ob, RECEIVABLE_ACCOUNTS, "debit",  last_month))
-    issues.extend(_check_receivables_by_sub(df, ob, PAYABLE_ACCOUNTS,    "credit", last_month))
+    # 除外科目を RECEIVABLE / PAYABLE リストから取り除く
+    recv = [a for a in RECEIVABLE_ACCOUNTS if not any(e in a for e in excl)]
+    pabl = [a for a in PAYABLE_ACCOUNTS    if not any(e in a for e in excl)]
+    issues.extend(_check_receivables_by_sub(df, ob, recv, "debit",  last_month))
+    issues.extend(_check_receivables_by_sub(df, ob, pabl, "credit", last_month))
     issues.extend(_check_tax_temp_accounts(df))
     issues.extend(_check_suspense_payments(df))
     issues.extend(_check_loan_repayment(df))

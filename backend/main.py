@@ -3,7 +3,7 @@
 クライアント管理機能追加
 """
 from pathlib import Path
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from typing import List, Optional
@@ -22,6 +22,7 @@ from checkers.governance_checker import check_governance
 from client_store import (
     list_clients, save_prior_files, load_prior_files,
     get_client_info, delete_prior_file, delete_client,
+    get_client_settings, save_client_settings,
 )
 
 app = FastAPI(title="会計データチェックシステム", version="1.5.0")
@@ -133,11 +134,26 @@ async def api_delete_client(client_name: str):
     raise HTTPException(404, "クライアントが見つかりません")
 
 
+@app.get("/api/clients/{client_name}/settings")
+async def api_get_settings(client_name: str):
+    """クライアントのチェック設定を取得"""
+    return JSONResponse(get_client_settings(client_name))
+
+
+@app.post("/api/clients/{client_name}/settings")
+async def api_save_settings(client_name: str, request: Request):
+    """クライアントのチェック設定を保存"""
+    body = await request.json()
+    saved = save_client_settings(client_name, body)
+    return JSONResponse({"status": "ok", "settings": saved})
+
+
 # ── 自動振り分けエンドポイント ─────────────────────────────
 @app.post("/api/check-auto")
 async def check_auto(
     files:       List[UploadFile] = File(...),
     client_name: Optional[str]    = Form(None),
+    check_until: Optional[str]    = Form(None),  # "2026-05" のような YYYY-MM 形式
 ):
     """
     1〜6ファイルをまとめて受け取り、自動判定して振り分けた上でチェックを実行する。
@@ -180,7 +196,10 @@ async def check_auto(
             "弥生会計の仕訳帳CSVを含めてください。"
         )
 
-    return await _run_checks(classified)
+    # クライアント設定（除外科目）を読み込む
+    client_settings = get_client_settings(client_name) if client_name else {}
+
+    return await _run_checks(classified, check_until=check_until, client_settings=client_settings)
 
 
 # ── 個別指定エンドポイント（従来の6スロット）──────────────────
@@ -214,7 +233,11 @@ async def check_manual(
 
 
 # ── チェック実行（共通処理）──────────────────────────────────
-async def _run_checks(c: dict) -> JSONResponse:
+async def _run_checks(
+    c: dict,
+    check_until: Optional[str] = None,
+    client_settings: dict = None,
+) -> JSONResponse:
     # 当期仕訳帳
     try:
         df, software = parse_csv(c["journal_current"])
@@ -256,24 +279,46 @@ async def _run_checks(c: dict) -> JSONResponse:
         parse_opening_balances(c["balance_sub_prior"])  if c.get("balance_sub_prior")  else {},
     )
 
-    # チェック実行
+    # ── チェック対象期間の決定 ──
     last_month = estimate_last_complete_month(df)
+    if check_until:
+        try:
+            import pandas as pd
+            specified = pd.Period(check_until, freq="M")
+            if specified < last_month:
+                last_month = specified   # ユーザー指定が優先
+        except Exception:
+            pass  # 不正な形式は無視
+
+    # ── 除外科目の設定 ──
+    exclude_accounts = (client_settings or {}).get("exclude_accounts", [])
     issues = []
-    issues.extend(check_bs(df, ob))
+    issues.extend(check_bs(df, ob, exclude_accounts=exclude_accounts))
     issues.extend(check_pl(df))
     issues.extend(check_tax(df))
     # 追加チェック（カテゴリ1〜5）
-    # last_month までのデータのみ対象（未入力期間・前期データの混入を防ぐ）
+    # last_month までのデータのみ対象
     df_current = df[df["date"].dt.to_period("M") <= last_month].copy() if not df.empty else df
-    try: issues.extend(check_completeness(df_current))
+    # 除外科目の行を除いたDataFrame
+    if exclude_accounts:
+        excl_mask = df_current["debit_account"].astype(str).apply(
+            lambda x: any(e in x for e in exclude_accounts)
+        ) | df_current["credit_account"].astype(str).apply(
+            lambda x: any(e in x for e in exclude_accounts)
+        )
+        df_checked = df_current[~excl_mask].copy()
+    else:
+        df_checked = df_current
+
+    try: issues.extend(check_completeness(df_checked))
     except Exception: pass
-    try: issues.extend(check_tax_detail(df_current))
+    try: issues.extend(check_tax_detail(df_checked))
     except Exception: pass
-    try: issues.extend(check_assets(df_current))
+    try: issues.extend(check_assets(df_checked))
     except Exception: pass
-    try: issues.extend(check_ar_ap(df_current))
+    try: issues.extend(check_ar_ap(df_checked))
     except Exception: pass
-    try: issues.extend(check_governance(df_current))
+    try: issues.extend(check_governance(df_checked))
     except Exception: pass
     if prior_df is not None:
         issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month, ob or None))
@@ -285,6 +330,10 @@ async def _run_checks(c: dict) -> JSONResponse:
     }
     if ob:
         c.setdefault("log", []).append(f"📊 当期首残高: {len(ob)}科目（{ob_source}）")
+    if exclude_accounts:
+        c.setdefault("log", []).append(f"🚫 チェック除外科目: {', '.join(exclude_accounts)}")
+    if check_until:
+        c.setdefault("log", []).append(f"📅 チェック対象期間: 〜{last_month}")
 
     return JSONResponse({
         "summary": {
@@ -296,6 +345,8 @@ async def _run_checks(c: dict) -> JSONResponse:
             "has_ob":            bool(ob),
             "ob_source":         ob_source,
             "ob_accounts":       len(ob),
+            "check_until":       str(last_month),
+            "exclude_accounts":  exclude_accounts,
             "has_prior_journal": prior_df is not None,
             "has_prior_bal":     bool(prior_ob),
             "date_range": {
