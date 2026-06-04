@@ -263,15 +263,17 @@ async def _run_checks(c: dict) -> JSONResponse:
     issues.extend(check_pl(df))
     issues.extend(check_tax(df))
     # 追加チェック（カテゴリ1〜5）
-    try: issues.extend(check_completeness(df))
+    # last_month までのデータのみ対象（未入力期間・前期データの混入を防ぐ）
+    df_current = df[df["date"].dt.to_period("M") <= last_month].copy() if not df.empty else df
+    try: issues.extend(check_completeness(df_current))
     except Exception: pass
-    try: issues.extend(check_tax_detail(df))
+    try: issues.extend(check_tax_detail(df_current))
     except Exception: pass
-    try: issues.extend(check_assets(df))
+    try: issues.extend(check_assets(df_current))
     except Exception: pass
-    try: issues.extend(check_ar_ap(df))
+    try: issues.extend(check_ar_ap(df_current))
     except Exception: pass
-    try: issues.extend(check_governance(df))
+    try: issues.extend(check_governance(df_current))
     except Exception: pass
     if prior_df is not None:
         issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month, ob or None))

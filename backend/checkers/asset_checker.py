@@ -6,6 +6,7 @@
 """
 import pandas as pd
 from typing import List, Dict, Any
+from checkers.check_utils import desc_safe, month_safe
 
 # 固定資産科目
 FIXED_ASSET_ACCOUNTS = [
@@ -95,15 +96,16 @@ def _check_3_2_under_threshold(df: pd.DataFrame) -> List[Dict[str, Any]]:
     target = df[acc_mask & (df["debit_amount"] > 0) & (df["debit_amount"] < THRESHOLD_EXPENSE)]
 
     for _, row in target.iterrows():
+        d = desc_safe(row)
+        desc_part = f"（摘要: {d}）" if d else ""
         issues.append({
             "level": "error", "category": "3-2 少額資産費用化",
             "check_id": "3-2", "account": str(row["debit_account"]),
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+            "month": month_safe(row),
             "message": (
                 f"【3-2・高】固定資産科目「{row['debit_account']}」に"
-                f"{row['debit_amount']:,.0f}円（10万円未満）の計上があります。"
+                f"{row['debit_amount']:,.0f}円（10万円未満）の計上があります{desc_part}。"
                 "10万円未満の物品は消耗品費等で費用処理（損金算入）すべきです。"
-                f"摘要: {str(row.get('description',''))[:30]}"
             ),
         })
     return issues
@@ -138,10 +140,10 @@ def _check_3_3_repair_capitalization(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     "check_id": "3-3", "account": "修繕費",
                     "month": str(period),
                     "message": (
-                        f"【3-3・高】伝票No.{slip}の修繕費が {total:,.0f}円 あります。"
-                        "20万円以上の修繕は資本的支出として固定資産計上が必要な場合があります。"
-                        "現状回復目的か価値向上目的かを確認してください。"
-                        f"摘要: {str(sample.get('description',''))[:30]}"
+                        f"【3-3・高】伝票No.{slip}の修繕費合計が {total:,.0f}円 に達しています。"
+                        "20万円以上の修繕工事は、現状回復目的か価値向上目的かを確認し、"
+                        "資本的支出に該当する場合は固定資産として計上が必要です。"
+                        + (f"（摘要: {desc_safe(sample)}）" if desc_safe(sample) else "")
                     ),
                 })
 

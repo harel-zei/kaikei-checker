@@ -9,6 +9,7 @@
 """
 import pandas as pd
 from typing import List, Dict, Any
+from checkers.check_utils import desc_safe, month_safe, is_store_address
 
 # ─── キーワードマスタ ───
 KW_REDUCED_TAX = ["弁当", "茶", "菓子", "食料品", "土産", "お茶", "おにぎり", "サンドイッチ", "惣菜"]
@@ -110,23 +111,41 @@ def _check_2_2_card_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 
 def _check_2_3_govt_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """印紙・行政手数料が課税になっている"""
+    """
+    印紙・行政手数料が課税になっている。
+    ただし「市役所前店」「区役所通り店」のように、
+    店舗名・住所として使われているキーワードは除外する。
+    """
     issues = []
     col = "debit_tax" if "debit_tax" in df.columns else None
     if not col:
         return issues
 
+    # トリガーワードごとに店舗名除外チェックを行う
+    GOVT_TRIGGER_STORE_CHECK = ["市役所", "区役所", "町役場", "村役場"]
+
+    def _is_genuine_govt(text: str) -> bool:
+        """店舗名・住所の一部ではなく、本当の行政機関への支払かを判定"""
+        if not _has_keyword(text, KW_GOVT_FEE):
+            return False
+        # 店舗名として使われていそうなキーワードは除外
+        for trigger in GOVT_TRIGGER_STORE_CHECK:
+            if trigger in text and is_store_address(text, trigger):
+                return False
+        return True
+
     targets = df[
-        df["description"].astype(str).apply(lambda x: _has_keyword(x, KW_GOVT_FEE)) &
+        df["description"].astype(str).apply(_is_genuine_govt) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
+        d = desc_safe(row)
         issues.append({
             "level": "error", "category": "2-3 行政手数料",
             "check_id": "2-3", "account": str(row["debit_account"]),
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+            "month": month_safe(row),
             "message": (
-                f"【2-3・高】摘要「{str(row['description'])[:30]}」は印紙・行政手数料と"
+                f"【2-3・高】摘要「{d}」は印紙・行政手数料と"
                 "思われますが、税区分が課税（10%）になっています。"
                 "印紙税・行政手数料等は非課税・不課税となります。"
             ),
