@@ -354,6 +354,11 @@ def _check_tax_temp_accounts(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # 仮払金・前渡金
 # ────────────────────────────────────────────────
 def _check_suspense_payments(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    仮払金・前渡金の法人税誤処理チェックのみ行う。
+    残高総額の表示は ar_ap_checker.py の _check_4_2_suspense_aging が
+    個別明細ベースで行うため、ここでは重複させない。
+    """
     issues = []
     for account in ["仮払金", "前渡金"]:
         entries = df[
@@ -362,18 +367,7 @@ def _check_suspense_payments(df: pd.DataFrame) -> List[Dict[str, Any]]:
         ]
         if entries.empty:
             continue
-        d = entries[entries["debit_account"].astype(str).str.contains(account, na=False)]["debit_amount"].sum()
-        c = entries[entries["credit_account"].astype(str).str.contains(account, na=False)]["credit_amount"].sum()
-        balance = d - c
-        if balance > 100000:
-            issues.append({
-                "level": "warning", "category": "BS", "account": account, "month": "全期間",
-                "message": (
-                    f"【要確認】{account} の残高が {balance:,.0f}円 あります。"
-                    "内容不明のまま長期間放置されていないか確認してください。"
-                    "法人税の支払いが仮払金で処理されている場合は「未払法人税等」の取崩し仕訳に修正が必要です。"
-                ),
-            })
+        # 法人税の誤処理チェックのみ（残高総額チェックは 4-2 に委譲）
         tax_ent = entries[
             entries.get("description", pd.Series(dtype=str)).astype(str).str.contains("法人税", na=False)
         ]
