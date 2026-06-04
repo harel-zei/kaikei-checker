@@ -136,44 +136,67 @@ def _check_receivables_by_sub(
     normal_side: str,
     last_month: "pd.Period",
 ) -> List[Dict[str, Any]]:
+    """
+    売掛金・買掛金・未払金等を補助科目（取引先）単位でチェックする。
+
+    重要: `str.contains(base_acc)` は部分一致のため「未払金」を検索すると
+    「リース未払金」もヒットする。そのため、実際の勘定科目名（actual_acc）を
+    使って期首残高辞書（ob）を照合する。
+    例: base_acc="未払金" でヒットした "リース未払金（名鉄協商...）" は
+        ob["リース未払金（名鉄協商...）"] で正しく期首残高が見つかる。
+    """
     issues = []
     for base_acc in accounts:
         d_rows = df[df["debit_account"].astype(str).str.contains(base_acc, na=False)]
         c_rows = df[df["credit_account"].astype(str).str.contains(base_acc, na=False)]
         if d_rows.empty and c_rows.empty:
             continue
-        subs = _collect_subs(d_rows, c_rows, df)
 
-        # 期首残高未提供の補助科目を収集し、親科目単位で1件にまとめる
-        missing_subs: list = []
-        check_issues: list = []
+        # ── 実際の勘定科目名（actual_acc）ごとにグループ化 ──
+        # 「未払金」「リース未払金」「未払費用」などが混在する場合でも
+        # それぞれの正確な名前で期首残高を照合できる
+        actual_accs: set = set()
+        if "debit_account" in d_rows.columns:
+            actual_accs |= set(d_rows["debit_account"].dropna().astype(str).str.strip().unique())
+        if "credit_account" in c_rows.columns:
+            actual_accs |= set(c_rows["credit_account"].dropna().astype(str).str.strip().unique())
+        actual_accs.discard(""); actual_accs.discard("nan")
 
-        if not subs:
-            _check_single_account(check_issues, df, base_acc, None, ob, normal_side, last_month)
-        else:
-            for sub in subs:
-                sub_issues: list = []
-                _check_single_account(sub_issues, df, base_acc, sub, ob, normal_side, last_month)
-                # INFO「期首残高未提供」は後でまとめて1件にする
-                for iss in sub_issues:
-                    if iss.get("level") == "info" and "期首残高未提供" in iss.get("message", ""):
-                        missing_subs.append(sub)
-                    else:
-                        check_issues.append(iss)
+        for actual_acc in sorted(actual_accs):
+            d_acc = d_rows[d_rows["debit_account"].astype(str).str.strip() == actual_acc]
+            c_acc = c_rows[c_rows["credit_account"].astype(str).str.strip() == actual_acc]
 
-        issues.extend(check_issues)
+            subs = _collect_subs(d_acc, c_acc, df)
 
-        # 期首残高未提供の補助科目を親科目単位で1件にまとめて出力
-        if missing_subs:
-            sample_subs = missing_subs[:5]
-            suffix = f"（他{len(missing_subs)-5}件）" if len(missing_subs) > 5 else ""
-            issues.append({
-                "level": "info", "category": "BS", "account": base_acc,
-                "month": "全期間",
-                "message": (
-                    f"【期首残高未提供】{base_acc} の補助科目 {len(missing_subs)}件 について"
-                    "期首残高が提供されていないため0円として計算しています。"
-                    f"（{', '.join(sample_subs)}{suffix}）"
+            # 期首残高未提供の補助科目を収集し、親科目単位で1件にまとめる
+            missing_subs: list = []
+            check_issues: list = []
+
+            if not subs:
+                _check_single_account(check_issues, df, actual_acc, None, ob, normal_side, last_month)
+            else:
+                for sub in subs:
+                    sub_issues: list = []
+                    _check_single_account(sub_issues, df, actual_acc, sub, ob, normal_side, last_month)
+                    for iss in sub_issues:
+                        if iss.get("level") == "info" and "期首残高未提供" in iss.get("message", ""):
+                            missing_subs.append(sub)
+                        else:
+                            check_issues.append(iss)
+
+            issues.extend(check_issues)
+
+            # 期首残高未提供の補助科目を科目単位で1件にまとめて出力
+            if missing_subs:
+                sample_subs = missing_subs[:5]
+                suffix = f"（他{len(missing_subs)-5}件）" if len(missing_subs) > 5 else ""
+                issues.append({
+                    "level": "info", "category": "BS", "account": actual_acc,
+                    "month": "全期間",
+                    "message": (
+                        f"【期首残高未提供】{actual_acc} の補助科目 {len(missing_subs)}件 について"
+                        "期首残高が提供されていないため0円として計算しています。"
+                        f"（{', '.join(sample_subs)}{suffix}）"
                     "正確なチェックには期首補助残高CSVまたは補助元帳ファイルをアップロードしてください。"
                 ),
             })
@@ -206,16 +229,18 @@ def _check_single_account(
 
     if sub:
         # 補助科目がある場合 → その補助科目専用の期首残高のみ使用
-        # 科目合計（ob.get(base_acc)）は絶対に使わない
-        opening = ob.get(label)
+        # 括弧の不一致（例: 弥生の試算表で内側の）が省略される）に対応するため
+        # 複数のバリエーションを試みる
+        opening = _ob_get_fuzzy(ob, label)
         opening_missing = (opening is None)
-        opening = opening or 0.0
+        opening = opening if opening is not None else 0.0
     else:
         opening = ob.get(base_acc, 0.0)
         opening_missing = (base_acc not in ob)
 
-    d_rows = df[df["debit_account"].astype(str).str.contains(base_acc, na=False)]
-    c_rows = df[df["credit_account"].astype(str).str.contains(base_acc, na=False)]
+    # 実際の勘定科目名（base_acc）でフィルタ
+    d_rows = df[df["debit_account"].astype(str).str.strip() == base_acc]
+    c_rows = df[df["credit_account"].astype(str).str.strip() == base_acc]
     d_sub, c_sub = _filter_sub(d_rows, c_rows, sub)
 
     if d_sub.empty and c_sub.empty:
@@ -433,6 +458,30 @@ def _detect_stale_by_activity(
                 flagged.append((period, bal))
 
     return flagged
+
+
+def _ob_get_fuzzy(ob: dict, label: str):
+    """
+    期首残高辞書から label を検索する。
+    括弧の不一致（弥生の試算表で入れ子括弧の末尾が省略されるケース）に対応するため、
+    以下の順に検索する:
+      1. 完全一致
+      2. 末尾の「）」を1つ除いたキー  例: A（B（C））→ A（B（C）
+      3. 末尾の「）」を追加したキー   例: A（B（C） → A（B（C））
+    """
+    # 1. 完全一致
+    if label in ob:
+        return ob[label]
+    # 2. 末尾）を除去
+    if label.endswith("）"):
+        alt = label[:-1]
+        if alt in ob:
+            return ob[alt]
+    # 3. 末尾に）を追加
+    alt2 = label + "）"
+    if alt2 in ob:
+        return ob[alt2]
+    return None
 
 
 def _collect_subs(d_rows: pd.DataFrame, c_rows: pd.DataFrame, df: pd.DataFrame) -> set:
