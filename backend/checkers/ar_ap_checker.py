@@ -5,6 +5,7 @@
 """
 import pandas as pd
 from typing import List, Dict, Any
+from checkers.check_utils import date_safe
 
 # 主な振込手数料金額
 WIRE_FEE_AMOUNTS = [110, 220, 330, 440, 550, 660, 770, 880, 990, 1100]
@@ -148,7 +149,7 @@ def _check_4_2_suspense_aging(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     "category": f"4-2 {account}滞留",
                     "check_id": "4-2",
                     "account": label,
-                    "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+                    "month": date_safe(row),
                     "message": (
                         f"【4-2・高】{label} に {row['date'].date()} 発生の"
                         f" {amt:,.0f}円 が{days_elapsed}日経過しても未精算です{desc_part}。"

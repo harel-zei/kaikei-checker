@@ -9,7 +9,7 @@
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Any
-from checkers.check_utils import desc_safe, month_safe
+from checkers.check_utils import desc_safe, month_safe, date_safe
 
 # 5-4: 交際費への疑いキーワード
 KW_ENTERTAINMENT = [
@@ -330,7 +330,7 @@ def _check_5_4_entertainment(df: pd.DataFrame) -> List[Dict[str, Any]]:
             issues.append({
                 "level": "warning", "category": "5-4 交際費境界",
                 "check_id": "5-4", "account": acct,
-                "month": month_safe(row),
+                "month": date_safe(row),
                 "message": (
                     f"【5-4・中】{acct} の摘要「{desc_safe(row)}」に"
                     "贈答・ゴルフ等のキーワードが含まれています。"

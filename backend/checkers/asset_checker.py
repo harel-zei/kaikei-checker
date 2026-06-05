@@ -6,7 +6,7 @@
 """
 import pandas as pd
 from typing import List, Dict, Any
-from checkers.check_utils import desc_safe, month_safe
+from checkers.check_utils import desc_safe, month_safe, date_safe
 
 # 固定資産科目
 FIXED_ASSET_ACCOUNTS = [
@@ -101,7 +101,7 @@ def _check_3_2_under_threshold(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "3-2 少額資産費用化",
             "check_id": "3-2", "account": str(row["debit_account"]),
-            "month": month_safe(row),
+            "month": date_safe(row),
             "message": (
                 f"【3-2・高】固定資産科目「{row['debit_account']}」に"
                 f"{row['debit_amount']:,.0f}円（10万円未満）の計上があります{desc_part}。"

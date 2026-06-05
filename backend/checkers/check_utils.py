@@ -14,12 +14,28 @@ def desc_safe(row, max_len: int = 35) -> str:
 
 
 def month_safe(row) -> str:
-    """日付を月表示に変換。NaT は '不明' に"""
+    """日付を月表示（YYYY-MM）に変換。NaT は '不明' に"""
     d = row.get("date")
     if d is None or (hasattr(d, "isnull") and pd.isnull(d)):
         return "不明"
     try:
         return str(pd.Timestamp(d).to_period("M"))
+    except Exception:
+        return "不明"
+
+
+def date_safe(row) -> str:
+    """
+    日付を YYYY-MM-DD 形式で返す。
+    Excel出力の日付欄で「2026年4月30日」のように日まで表示するために使用。
+    NaT / None の場合は '不明' を返す。
+    """
+    d = row.get("date")
+    if d is None or (hasattr(d, "isnull") and pd.isnull(d)):
+        return "不明"
+    try:
+        ts = pd.Timestamp(d)
+        return f"{ts.year}-{ts.month:02d}-{ts.day:02d}"
     except Exception:
         return "不明"
 

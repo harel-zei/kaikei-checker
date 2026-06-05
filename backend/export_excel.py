@@ -157,8 +157,15 @@ def _build_checksheet(wb, issues, period):
         if base:
             prev_base = base
 
+        # 日付フォーマット変換
+        # "2026-04-30" → "2026年4月30日"
+        # "2026-04"    → "2026年4月"
+        # "全期間"等   → そのまま
         date_str = month
-        if len(month) == 7 and month[4] == "-":
+        if len(month) == 10 and month[4] == "-" and month[7] == "-":
+            y, m, d = month.split("-")
+            date_str = f"{y}年{int(m)}月{int(d)}日"
+        elif len(month) == 7 and month[4] == "-":
             y, m = month.split("-")
             date_str = f"{y}年{int(m)}月"
 
