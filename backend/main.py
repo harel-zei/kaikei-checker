@@ -137,46 +137,56 @@ async def api_save_prior(
     files: List[UploadFile] = File(...),
 ):
     """前期ファイルを自動判定してクライアントに保存する"""
-    if not files:
-        raise HTTPException(400, "ファイルを選択してください")
+    try:
+        if not files:
+            raise HTTPException(400, "ファイルを選択してください")
 
-    file_data = []
-    for f in files:
-        try:
-            file_data.append((f.filename, _read(await f.read())))
-        except Exception as e:
-            raise HTTPException(400, f"{f.filename} の読み込みに失敗: {e}")
+        file_data = []
+        for f in files:
+            try:
+                raw  = await f.read()
+                text = _read(raw)
+                # ファイル名が空の場合は番号で補完
+                fname = f.filename or f"file_{len(file_data)+1}.txt"
+                file_data.append((fname, text))
+            except Exception as e:
+                raise HTTPException(400, f"ファイル読み込みエラー: {e}")
 
-    classified = auto_classify_files(file_data)
+        if not file_data:
+            raise HTTPException(400, "ファイルを読み込めませんでした")
 
-    def _fname(keyword, default):
-        return next((n for n, _ in file_data if keyword in n), default)
+        classified = auto_classify_files(file_data)
 
-    to_save = {}
-    j = classified.get("journal_prior") or classified.get("journal_current")
-    if j:
-        to_save["prior_journal"] = (_fname("仕訳", "仕訳.txt"), j)
+        def _fname(keyword, default):
+            return next((n for n, _ in file_data if keyword in n), default)
 
-    bm = classified.get("balance_main_prior") or classified.get("balance_main_current")
-    if bm:
-        to_save["prior_bal_main"] = (_fname("残高", "残高.txt"), bm)
+        to_save = {}
+        j = classified.get("journal_prior") or classified.get("journal_current")
+        if j:
+            to_save["prior_journal"] = (_fname("仕訳", "仕訳.txt"), j)
 
-    bs = classified.get("balance_sub_prior") or classified.get("balance_sub_current")
-    if bs:
-        to_save["prior_bal_sub"] = (_fname("補助", "補助残高.txt"), bs)
-    elif classified.get("balance_sub_current"):
-        to_save["prior_bal_sub"] = (
-            next((n for n, _ in file_data if "補助" in n), "補助残高.txt"),
-            classified["balance_sub_current"]
-        )
+        bm = classified.get("balance_main_prior") or classified.get("balance_main_current")
+        if bm:
+            to_save["prior_bal_main"] = (_fname("残高", "残高.txt"), bm)
 
-    if not to_save:
-        raise HTTPException(400, "保存できるファイルが見つかりませんでした")
+        bs = classified.get("balance_sub_prior") or classified.get("balance_sub_current")
+        if bs:
+            to_save["prior_bal_sub"] = (_fname("補助", "補助残高.txt"), bs)
 
-    result = save_prior_files(client_name, to_save)
-    result["log"]            = classified.get("log", [])
-    result["uploaded_count"] = len(file_data)   # アップロードされた元ファイル数
-    return JSONResponse(result)
+        if not to_save:
+            raise HTTPException(400, "保存できるファイルが見つかりませんでした")
+
+        result = save_prior_files(client_name, to_save)
+        result["log"]            = classified.get("log", [])
+        result["uploaded_count"] = len(file_data)
+        return JSONResponse(result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"保存処理でエラーが発生しました: {str(e)}")
 
 
 @app.delete("/api/clients/{client_name}/prior/{file_key}")
