@@ -494,17 +494,22 @@
     if (!currentClient) { alert('クライアント名を入力してください'); return; }
     if (newClientFiles.length === 0) { alert('ファイルを選択してください'); return; }
 
-    const fd = new FormData();
-    for (const f of newClientFiles) fd.append('files', f);
-
     const btn = document.getElementById('newClientSaveBtn');
     btn.disabled = true; btn.textContent = '保存中...';
 
     try {
+      const fd = new FormData();
+      for (const f of newClientFiles) {
+        const blob = new Blob([f], { type: 'text/plain' });
+        fd.append('files', blob, f.name);
+      }
       const res  = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/save-prior`, {
         method: 'POST', body: fd,
       });
-      const data = await res.json();
+      const text2 = await res.text();
+      let data;
+      try { data = JSON.parse(text2); }
+      catch(e) { throw new Error('サーバーエラー: ' + text2.slice(0,100)); }
       if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
 
       // 保存完了 → 既存クライアントのUIに切り替え
@@ -661,21 +666,40 @@
     addModalFiles(e.dataTransfer.files);
   }
 
+  // ファイルをテキストとして読み込む（FileReader API）
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      // Shift-JIS対応のため複数エンコーディングを試みる
+      reader.onload = e => resolve({ name: file.name, content: e.target.result });
+      reader.onerror = () => reject(new Error(file.name + ' の読み込みに失敗'));
+      reader.readAsText(file, 'Shift_JIS');  // freeeはShift-JIS
+    });
+  }
+
   async function savePriorFiles() {
     if (!currentClient) { alert('クライアント名を入力してください'); return; }
     if (modalFiles.length === 0) { alert('ファイルを選択してください'); return; }
-
-    const fd = new FormData();
-    for (const f of modalFiles) fd.append('files', f);
 
     document.getElementById('modalSaveBtn').disabled = true;
     document.getElementById('modalSaveBtn').textContent = '保存中...';
 
     try {
+      // ファイルをJSで読み込んでからFormDataで送信
+      const fd = new FormData();
+      for (const f of modalFiles) {
+        const blob = new Blob([f], { type: 'text/plain' });
+        fd.append('files', blob, f.name);
+      }
+
       const res  = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/save-prior`, {
         method: 'POST', body: fd,
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch(e) { throw new Error('サーバーエラー: ' + text.slice(0,100)); }
+      if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
       if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
 
       closeSaveModal();
