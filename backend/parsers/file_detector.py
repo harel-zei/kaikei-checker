@@ -37,7 +37,16 @@ def detect_file_type(content: str) -> str:
     if "残高試算表" in head or "[貸借対照表]" in head or "[損益計算書]" in head:
         return FILE_TYPE_BALANCE_MAIN
 
-    # freee / MF の仕訳帳
+    # freee 試算表（損益計算書・貸借対照表・製造原価報告書）
+    # ファイル名や1行目に「試算表：」が含まれる
+    if "試算表：" in head:
+        return FILE_TYPE_BALANCE_MAIN
+
+    # freee 仕訳帳（新）CSV: "No","取引日","管理番号","借方勘定科目" 形式
+    if '"取引日"' in head and '"借方勘定科目"' in head and '"貸方勘定科目"' in head:
+        return FILE_TYPE_JOURNAL
+
+    # freee / MF の仕訳帳（旧形式）
     if "発生日" in head and "借方勘定科目" in head:
         return FILE_TYPE_JOURNAL
     if "借方科目" in head and "貸方科目" in head:
@@ -96,6 +105,14 @@ def _balance_period_date(content: str) -> Optional[pd.Timestamp]:
             month = int(m.group(5))
             day   = int(m.group(6))
             return pd.Timestamp(year=year, month=month, day=day)
+        except Exception:
+            pass
+
+    # freee 試算表: "（期間：2025年09月～2025年12月" の形式
+    m = re.search(r'(\d{4})年(\d{2})月.*?(\d{4})年(\d{2})月', content[:300])
+    if m:
+        try:
+            return pd.Timestamp(year=int(m.group(3)), month=int(m.group(4)), day=28)
         except Exception:
             pass
 
@@ -179,32 +196,44 @@ def auto_classify_files(files: list[tuple[str, str]]) -> dict:
                 _assign(result, ftype, PERIOD_PRIOR, combined[1])
 
         else:
-            # 残高ファイル: 2ファイルある場合は新旧で判定
-            # 1ファイルのみの場合 → 当期仕訳帳より古ければ「前期」と判定
+            # 残高ファイル: 複数ある場合は全てマージして使用
             combined = group_with_date + group_no_date
-            if len(combined) == 1:
-                f = combined[0]
+
+            # 全ファイルが前期か当期かを判定
+            prior_files   = []
+            current_files = []
+            for f in combined:
                 if (current_journal_date and f.get("date") and
                         f["date"] < current_journal_date):
-                    # 残高ファイルが当期仕訳より古い → 前期のファイルとして扱う
-                    _assign(result, ftype, PERIOD_PRIOR, f)
-                    result["log"].append(
-                        f"  ℹ️ {f['filename']}: 当期仕訳より古いため「前期」として振り分け"
-                        "（期末残高を当期首残高として自動導出）"
-                    )
+                    prior_files.append(f)
                 else:
-                    _assign(result, ftype, PERIOD_CURRENT, f)
-            elif len(combined) >= 2:
-                _assign(result, ftype, PERIOD_CURRENT, combined[0])  # 新しい方=当期
-                _assign(result, ftype, PERIOD_PRIOR,   combined[1])  # 古い方=前期
+                    current_files.append(f)
 
-        if len(combined) > 2:
-            for extra in combined[2:]:
+            # 前期ファイルが複数ある場合はコンテンツをマージ
+            if prior_files:
+                merged = _merge_file_contents(prior_files)
+                result[f"{ftype}_{PERIOD_PRIOR}"] = merged
+                names = [f["filename"] for f in prior_files]
                 result["log"].append(
-                    f"⚠️ {extra['filename']} は同種別3ファイル目のため無視されました"
+                    f"  ✅ 前期残高ファイル {len(prior_files)}件 をマージ: {', '.join(names)}"
                 )
+            if current_files:
+                merged = _merge_file_contents(current_files)
+                result[f"{ftype}_{PERIOD_CURRENT}"] = merged
+                names = [f["filename"] for f in current_files]
+                result["log"].append(
+                    f"  ✅ 当期残高ファイル {len(current_files)}件 をマージ: {', '.join(names)}"
+                )
+            # 日付なしで分類できなかった場合
+            if not prior_files and not current_files and combined:
+                _assign(result, ftype, PERIOD_CURRENT, combined[0])
 
     return result
+
+
+def _merge_file_contents(files: list) -> str:
+    """複数の残高ファイルのコンテンツを改行で結合してマージする"""
+    return "\n".join(f["content"] for f in files if f.get("content"))
 
 
 def _assign(result: dict, ftype: str, period: str, f: dict) -> None:
