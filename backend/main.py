@@ -174,7 +174,8 @@ async def api_save_prior(
         raise HTTPException(400, "保存できるファイルが見つかりませんでした")
 
     result = save_prior_files(client_name, to_save)
-    result["log"] = classified.get("log", [])
+    result["log"]            = classified.get("log", [])
+    result["uploaded_count"] = len(file_data)   # アップロードされた元ファイル数
     return JSONResponse(result)
 
 

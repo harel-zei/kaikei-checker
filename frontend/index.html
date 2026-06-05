@@ -513,7 +513,12 @@
       await loadClientList();
       document.getElementById('clientSelect').value = currentClient;
       await showClientStatus(currentClient);
-      alert(`✅ 保存しました（${data.saved?.length || 0}ファイル）`);
+      const uploaded = (data.uploaded_count || data.saved?.length || 0);
+      const saved    = data.saved?.length || 0;
+      const msg = uploaded > saved
+        ? `✅ 保存しました\n・アップロード: ${uploaded}ファイル\n・保存形式: ${saved}種類\n（複数の試算表は自動マージして保存）`
+        : `✅ 保存しました（${saved}種類）`;
+      alert(msg);
     } catch(e) {
       alert('エラー: ' + e.message);
     } finally {
@@ -678,7 +683,12 @@
       await showClientStatus(currentClient);
       // セレクトボックスも更新
       document.getElementById('clientSelect').value = currentClient;
-      alert(`✅ 保存しました（${data.saved?.length || 0}ファイル）`);
+      const uploaded = (data.uploaded_count || data.saved?.length || 0);
+      const saved    = data.saved?.length || 0;
+      const msg = uploaded > saved
+        ? `✅ 保存しました\n・アップロード: ${uploaded}ファイル\n・保存形式: ${saved}種類\n（複数の試算表は自動マージして保存）`
+        : `✅ 保存しました（${saved}種類）`;
+      alert(msg);
     } catch(e) {
       alert('エラー: ' + e.message);
     } finally {
