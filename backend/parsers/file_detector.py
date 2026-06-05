@@ -82,10 +82,18 @@ def _latest_journal_date(content: str) -> Optional[pd.Timestamp]:
             dates.append(ts)
         except Exception:
             pass
-    # 通常形式: YYYY/MM/DD
+    # 通常形式: YYYY/MM/DD（弥生ヘッダーあり）
     for m in re.finditer(r'(\d{4})/(\d{2})/(\d{2})', content):
         try:
             dates.append(pd.Timestamp(int(m.group(1)), int(m.group(2)), int(m.group(3))))
+        except Exception:
+            pass
+    # freee形式: YYYY-MM-DD（ハイフン区切り）
+    for m in re.finditer(r'(\d{4})-(\d{2})-(\d{2})', content[:50000]):  # 先頭50KB のみ走査
+        try:
+            y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if 2000 <= y <= 2100 and 1 <= mo <= 12 and 1 <= d <= 31:
+                dates.append(pd.Timestamp(y, mo, d))
         except Exception:
             pass
     return max(dates) if dates else None
