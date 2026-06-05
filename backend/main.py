@@ -15,6 +15,7 @@ from typing import List, Optional
 from parsers.csv_parser import (
     parse_csv, parse_opening_balances, parse_ending_balances,
     parse_opening_from_ledger, _is_ledger_format,
+    parse_freee_balance, _is_freee_trial_balance,
 )
 from parsers.file_detector import auto_classify_files
 from checkers.bs_checker import check_bs, estimate_last_complete_month
@@ -81,13 +82,17 @@ def _read(raw: bytes) -> str:
 def _parse_balance_file(content: str, use_ending: bool = False) -> dict:
     """
     残高ファイルを適切な方法でパースする。
-    補助元帳形式（[前期繰越行]）→ parse_opening_from_ledger
-    試算表/補助残高一覧形式（[明細行]）→ parse_ending_balances or parse_opening_balances
+    自動判定:
+      補助元帳形式（[前期繰越行]）  → parse_opening_from_ledger
+      弥生 試算表/補助残高（[明細行]）→ parse_ending_balances or parse_opening_balances
+      freee 試算表（試算表：〜）     → parse_freee_balance
     """
     if not content:
         return {}
     if _is_ledger_format(content):
         return parse_opening_from_ledger(content)
+    elif _is_freee_trial_balance(content):
+        return parse_freee_balance(content, use_ending=use_ending)
     elif use_ending:
         return parse_ending_balances(content)
     else:

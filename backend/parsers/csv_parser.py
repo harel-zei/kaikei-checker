@@ -160,6 +160,115 @@ def _is_ledger_format(content: str) -> bool:
     return '[前期繰越' in content[:2000]
 
 
+def _is_freee_trial_balance(content: str) -> bool:
+    """freee の試算表CSVかどうかを判定"""
+    head = content[:500]
+    return "試算表：" in head or ("期首" in head and "期末" in head and "借方金額" in head)
+
+
+def parse_freee_balance(content: str, use_ending: bool = False) -> dict:
+    """
+    freee の試算表CSV（貸借対照表）から残高を取得する。
+
+    freee BS 列構成:
+      [0-7]: 階層（勘定科目・補助科目）
+      [8]:   期首残高
+      [9]:   借方金額
+      [10]:  貸方金額
+      [11]:  期末残高
+      [12]:  構成比
+
+    use_ending=True  → [11] 期末残高を返す（前期末 = 当期首として使用）
+    use_ending=False → [8]  期首残高を返す
+
+    取引先別の内訳（深い階層）は除外し、主科目・補助科目レベルのみ取得する。
+    """
+    balances: dict = {}
+
+    # ヘッダー行から「期首」「期末」列の位置を特定
+    opening_col = 8
+    ending_col  = 11
+
+    lines = content.split("\n")
+
+    # ヘッダー行を探して列位置を確定
+    for line in lines[:5]:
+        parts = _split_csv_line(line)
+        if "期首" in parts or "期末" in parts:
+            for i, p in enumerate(parts):
+                if "期首" in p:
+                    opening_col = i
+                if "期末" in p:
+                    ending_col = i
+            break
+
+    amount_col = ending_col if use_ending else opening_col
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        parts = _split_csv_line(line)
+        if len(parts) <= amount_col:
+            continue
+
+        # 金額列の値を取得
+        amount_str = parts[amount_col].strip().strip('"')
+        if not amount_str or amount_str in ("0", "0.0", ""):
+            continue
+        try:
+            amount = float(amount_str.replace(",", ""))
+        except ValueError:
+            continue
+
+        # 勘定科目名を階層から取得
+        # 列0〜7の中で値のある最初の（最も左の）セルが科目名
+        account = ""
+        depth   = 0
+        for i in range(min(8, len(parts))):
+            v = parts[i].strip().strip('"')
+            if v:
+                account = v
+                depth   = i
+                break
+
+        if not account:
+            continue
+
+        # スキップ条件:
+        # ① ヘッダー行（「資産の部」「負債の部」「構成比」等）
+        # ② 取引先別の集計行ラベル（「取引先別」）
+        # ③ 深すぎる階層（depth >= 4 は取引先別の内訳）
+        skip_keywords = ["の部", "合計", "構成比", "取引先別", "期間", "表示単位",
+                         "試算表", "帳票名"]
+        if any(k in account for k in skip_keywords):
+            continue
+        if depth >= 4:   # 取引先別の内訳（深い階層）は除外
+            continue
+
+        # 補助科目がある場合: 列1つ右が補助科目名
+        # freeeでは勘定科目の直下に "paild", "りそな　当座" 等が並ぶ
+        # これらを「勘定科目（補助科目）」として登録
+        if depth >= 2:
+            # 親科目（1つ上のレベル）を求めてキーを作る
+            # 簡易実装: depth=2 なら主科目、depth=3 なら補助科目
+            key = account
+            balances[key] = amount
+        else:
+            balances[account] = amount
+
+    return balances
+
+
+def _split_csv_line(line: str) -> list:
+    """CSV行を安全にパースして各セルをリストで返す"""
+    try:
+        import csv
+        return list(next(csv.reader(io.StringIO(line))))
+    except Exception:
+        return line.split(",")
+
+
 def parse_opening_balances(content: str) -> dict:
     """
     弥生「残高試算表」または「補助残高一覧表」のエクスポートCSVから期首残高を読み込む。
