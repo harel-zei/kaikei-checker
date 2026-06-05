@@ -41,7 +41,7 @@ def _check_3_1_sme_deduction(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     issues = []
     acc_mask = df["debit_account"].astype(str).apply(
-        lambda x: any(a in x for a in FIXED_ASSET_ACCOUNTS)
+        lambda x: isinstance(x, str) and x not in ("nan", "None", "") and any(a in x for a in FIXED_ASSET_ACCOUNTS)
     )
     asset_entries = df[acc_mask].copy()
     if asset_entries.empty:
@@ -91,7 +91,7 @@ def _check_3_2_under_threshold(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """固定資産科目に10万円未満の計上→消耗品費等で費用化すべき"""
     issues = []
     acc_mask = df["debit_account"].astype(str).apply(
-        lambda x: any(a in x for a in FIXED_ASSET_ACCOUNTS)
+        lambda x: isinstance(x, str) and x not in ("nan", "None", "") and any(a in x for a in FIXED_ASSET_ACCOUNTS)
     )
     target = df[acc_mask & (df["debit_amount"] > 0) & (df["debit_amount"] < THRESHOLD_EXPENSE)]
 
@@ -118,7 +118,7 @@ def _check_3_3_repair_capitalization(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """修繕費に20万円以上の計上→資本的支出として固定資産計上の可能性"""
     issues = []
     acc_mask = df["debit_account"].astype(str).apply(
-        lambda x: any(a in x for a in REPAIR_ACCOUNTS)
+        lambda x: isinstance(x, str) and x not in ("nan", "None", "") and any(a in x for a in REPAIR_ACCOUNTS)
     )
     repair_entries = df[acc_mask].copy()
     if repair_entries.empty:

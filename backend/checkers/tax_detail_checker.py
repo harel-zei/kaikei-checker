@@ -212,7 +212,7 @@ def _check_2_5_overseas_vendor(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     target_accounts = ["広告宣伝費", "通信費", "支払手数料", "諸会費", "ソフトウェア", "システム費"]
     acc_mask = df["debit_account"].astype(str).apply(
-        lambda x: any(a in x for a in target_accounts)
+        lambda x: isinstance(x, str) and x not in ("nan", "None", "") and any(a in x for a in target_accounts)
     )
 
     targets = df[
@@ -244,7 +244,7 @@ def _check_2_6_overseas_travel(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     target_accounts = ["旅費交通費", "接待交際費", "会議費"]
     acc_mask = df["debit_account"].astype(str).apply(
-        lambda x: any(a in x for a in target_accounts)
+        lambda x: isinstance(x, str) and x not in ("nan", "None", "") and any(a in x for a in target_accounts)
     )
 
     targets = df[
