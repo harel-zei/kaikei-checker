@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: kaikei-checker
+    env: python
+    region: singapore          # 最寄りのリージョン（日本に近い）
+    plan: free                 # 無料プラン（後で有料に変更可）
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: APP_USERNAME
+        value: admin           # ← ログインユーザー名（後で変更可）
+      - key: APP_PASSWORD
+        generateValue: true    # ← Renderが自動でパスワードを生成
+    disk:
+      name: client-data
+      mountPath: /opt/render/project/src/backend/client_data
+      sizeGB: 1                # クライアントデータ保存用ディスク（1GB）

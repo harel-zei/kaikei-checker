@@ -1,10 +1,12 @@
 """
 会計データチェックシステム - FastAPI バックエンド v1.5
-クライアント管理機能追加
+クライアント管理機能追加 / Render デプロイ対応
 """
+import os, secrets
 from pathlib import Path
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Body
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request, Body, Depends, status
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import io, csv as csv_module
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -34,6 +36,37 @@ from client_store import (
 app = FastAPI(title="会計データチェックシステム", version="1.5.0")
 frontend_path = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
+
+# ── パスワード認証 ─────────────────────────────────────────
+# 環境変数 APP_PASSWORD が設定されている場合のみ認証を要求
+# APP_USERNAME のデフォルトは "admin"
+_security = HTTPBasic(auto_error=False)
+
+def require_auth(credentials: Optional[HTTPBasicCredentials] = Depends(_security)):
+    """
+    環境変数 APP_PASSWORD が設定されていれば Basic 認証を要求する。
+    ローカル開発時（APP_PASSWORD 未設定）は認証なしで通過。
+    """
+    app_password = os.getenv("APP_PASSWORD", "")
+    if not app_password:
+        return  # ローカル開発モード: 認証スキップ
+
+    app_username = os.getenv("APP_USERNAME", "admin")
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="認証が必要です",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    ok_user = secrets.compare_digest(credentials.username.encode(), app_username.encode())
+    ok_pass = secrets.compare_digest(credentials.password.encode(), app_password.encode())
+    if not (ok_user and ok_pass):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="ユーザー名またはパスワードが違います",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 def _read(raw: bytes) -> str:
@@ -70,7 +103,7 @@ def _merge_balances(*dicts) -> dict:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root():
+async def root(_: None = Depends(require_auth)):
     return (frontend_path / "index.html").read_text(encoding="utf-8")
 
 
@@ -175,7 +208,8 @@ async def api_save_settings(client_name: str, request: Request):
 async def check_auto(
     files:       List[UploadFile] = File(...),
     client_name: Optional[str]    = Form(None),
-    check_until: Optional[str]    = Form(None),  # "2026-05" のような YYYY-MM 形式
+    check_until: Optional[str]    = Form(None),
+    _: None = Depends(require_auth),
 ):
     """
     1〜6ファイルをまとめて受け取り、自動判定して振り分けた上でチェックを実行する。
