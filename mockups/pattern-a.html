@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Pattern A - プロフェッショナルオレンジ</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Hiragino Sans", "Meiryo", sans-serif; background: #fdf6f0; color: #2d1a0e; }
+
+/* ヘッダー */
+header {
+  background: linear-gradient(135deg, #c85a00, #e07b2a);
+  color: white; padding: 18px 32px;
+  display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 3px 12px rgba(200,90,0,0.3);
+}
+header h1   { font-size: 1.4rem; font-weight: 700; }
+header .sub { font-size: 0.83rem; opacity: 0.85; margin-top: 2px; }
+
+.container { max-width: 860px; margin: 0 auto; padding: 28px 16px; }
+.badge-a { background: #c85a00; color: white; font-size: .7rem; padding: 2px 8px; border-radius: 10px; }
+.label { font-size: .78rem; color: #9a5a30; font-weight: 600; margin-bottom: 4px; }
+
+/* カード */
+.card { background: white; border-radius: 12px; padding: 24px 28px; margin-bottom: 18px;
+  box-shadow: 0 2px 8px rgba(200,90,0,.08); border-top: 3px solid #e07b2a; }
+.card-title { font-size: .95rem; font-weight: 700; color: #c85a00; margin-bottom: 16px; }
+
+/* クライアント */
+.client-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+select, input[type=text] {
+  width: 100%; padding: 9px 12px;
+  border: 1.5px solid #f0c49a; border-radius: 8px; font-size: .9rem; background: #fffaf6;
+}
+select:focus, input:focus { outline: none; border-color: #c85a00; }
+
+/* 新規クライアントエリア */
+.new-area { background: #fff7f0; border: 1.5px solid #f0c49a; border-radius: 10px; padding: 16px; margin-top: 12px; }
+
+/* ドロップゾーン */
+.drop { border: 2px dashed #f0a060; border-radius: 10px; padding: 36px 20px;
+  text-align: center; background: #fffaf6; cursor: pointer; margin-bottom: 14px; }
+.drop .icon { font-size: 2.4rem; margin-bottom: 8px; }
+.drop .title { font-size: 1rem; font-weight: 600; color: #c85a00; margin-bottom: 5px; }
+.drop .hint  { font-size: .83rem; color: #9a7060; line-height: 1.7; }
+
+/* ボタン */
+.btn-primary   { background: #c85a00; color: white; border: none; padding: 11px 28px; border-radius: 8px; font-size: .93rem; font-weight: 700; cursor: pointer; }
+.btn-primary:hover { background: #a84800; }
+.btn-secondary { background: #fde8d8; color: #c85a00; border: none; padding: 11px 22px; border-radius: 8px; font-size: .9rem; font-weight: 600; cursor: pointer; }
+
+/* サマリー */
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+.sc { background: white; border-radius: 10px; padding: 18px; text-align: center;
+  box-shadow: 0 1px 6px rgba(200,90,0,.1); }
+.sc .n   { font-size: 2.3rem; font-weight: 800; }
+.sc .lbl { font-size: .8rem; color: #9a7060; margin-top: 4px; }
+.c-err .n { color: #dc2626; } .c-wrn .n { color: #d97706; }
+.c-inf .n { color: #e07b2a; } .c-tot .n { color: #c85a00; }
+.c-tot { border: 2px solid #e07b2a; }
+
+/* タブ */
+.tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.tab { padding: 5px 15px; border-radius: 20px; font-size: .83rem; font-weight: 500;
+  cursor: pointer; border: 2px solid transparent; }
+.tab.all    { background: #fde8d8; color: #c85a00; border-color: #f0a060; font-weight: 700; }
+.tab.error  { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+.tab.warn   { background: #fffbeb; color: #d97706; border-color: #fde68a; }
+.tab.info   { background: #fff7f0; color: #e07b2a; border-color: #f0c49a; }
+
+/* 指摘カード */
+.issue-card { background: white; border-radius: 10px; padding: 14px 18px; margin-bottom: 10px;
+  box-shadow: 0 1px 4px rgba(200,90,0,.08); border-left: 4px solid; display: flex; gap: 12px; }
+.issue-card.error   { border-color: #dc2626; }
+.issue-card.warning { border-color: #f59e0b; }
+.issue-card.info    { border-color: #e07b2a; }
+.bdg { padding: 2px 8px; border-radius: 10px; font-size: .72rem; font-weight: 600; }
+.b-err  { background: #fef2f2; color: #dc2626; }
+.b-warn { background: #fffbeb; color: #d97706; }
+.b-info { background: #fff7f0; color: #c85a00; }
+.b-cat  { background: #fde8d8; color: #7a3800; }
+.b-acc  { background: #fef3e8; color: #9a4500; }
+.b-mon  { background: #fefce8; color: #7a5800; }
+.ic-msg { font-size: .88rem; line-height: 1.65; color: #3d2010; margin-top: 5px; }
+
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pattern-label { text-align:center; padding: 8px; background: #c85a00; color: white; font-weight:700; font-size:1rem; border-radius: 8px 8px 0 0; margin: -24px -28px 20px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>📊</div>
+  <div>
+    <h1>会計データチェックシステム</h1>
+    <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- パターン表示 -->
+  <div style="text-align:center;margin-bottom:20px;">
+    <span style="background:#c85a00;color:white;padding:6px 20px;border-radius:20px;font-weight:700;font-size:.95rem;">
+      Pattern A ── プロフェッショナルオレンジ
+    </span>
+    <p style="color:#9a5a30;font-size:.82rem;margin-top:6px;">落ち着いた深みのあるオレンジ。信頼感・専門性を重視</p>
+  </div>
+
+  <!-- クライアント -->
+  <div class="card">
+    <div class="card-title">🏢 クライアント選択</div>
+    <div class="client-row">
+      <div style="flex:1;">
+        <div class="label">保存済みクライアント</div>
+        <select><option>サンブルームコスメ株式会社</option></select>
+      </div>
+      <div style="color:#f0a060;padding-top:18px;">または</div>
+      <div style="flex:1;">
+        <div class="label">新規クライアント名</div>
+        <input type="text" placeholder="例: 万代建材株式会社">
+      </div>
+    </div>
+    <div class="new-area">
+      <div style="font-size:.85rem;font-weight:700;color:#c85a00;margin-bottom:8px;">✅ 保存済みの前期データ</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;align-items:center;gap:8px;background:#fff7f0;padding:7px 12px;border-radius:7px;border:1px solid #f0c49a;font-size:.83rem;">
+          <span>✅</span><span style="flex:1;color:#7a3800;font-weight:500;">前期仕訳帳</span><span style="color:#9a7060;font-size:.75rem;">前期仕訳.txt（2025/06/01保存）</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;background:#fff7f0;padding:7px 12px;border-radius:7px;border:1px solid #f0c49a;font-size:.83rem;">
+          <span>✅</span><span style="flex:1;color:#7a3800;font-weight:500;">前期首試算表</span><span style="color:#9a7060;font-size:.75rem;">前期期首残高.txt（2025/06/01保存）</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- アップロード -->
+  <div class="card">
+    <div class="card-title">📂 当期ファイルをアップロード</div>
+    <div class="drop">
+      <div class="icon">📄</div>
+      <div class="title">当期仕訳帳 CSV をドロップ</div>
+      <div class="hint">
+        <strong>当期仕訳帳のみ</strong>でOKです（弥生 / freee / MoneyForward）<br>
+        <span style="color:#c85a00;">✅ 当期首残高は前期データから自動導出されます</span>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn-primary">チェック実行</button>
+      <button class="btn-secondary">サンプルで試す</button>
+    </div>
+  </div>
+
+  <!-- サマリー -->
+  <div class="summary-grid">
+    <div class="sc c-err"><div class="n">3</div><div class="lbl">🔴 要修正</div></div>
+    <div class="sc c-wrn"><div class="n">18</div><div class="lbl">🟡 要確認</div></div>
+    <div class="sc c-inf"><div class="n">12</div><div class="lbl">🟠 提案</div></div>
+    <div class="sc c-tot"><div class="n">33</div><div class="lbl">📊 合計</div></div>
+  </div>
+
+  <!-- タブ -->
+  <div class="tabs">
+    <div class="tab all">すべて</div>
+    <div class="tab error">🔴 要修正 (3)</div>
+    <div class="tab warn">🟡 要確認 (18)</div>
+    <div class="tab info">🟠 提案 (12)</div>
+  </div>
+
+  <!-- 指摘カード サンプル -->
+  <div class="issue-card error">
+    <div>🔴</div>
+    <div style="flex:1;">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;">
+        <span class="bdg b-err">要修正</span><span class="bdg b-cat">2-2 決済手数料</span>
+        <span class="bdg b-acc">支払手数料</span><span class="bdg b-mon">2026-02</span>
+      </div>
+      <div class="ic-msg">【2-2・高】摘要「Amazon手数料」はEC決済手数料と思われますが、税区分が課税（10%）になっています。売上債権の譲渡にかかる手数料は非課税となります。</div>
+    </div>
+  </div>
+  <div class="issue-card warning">
+    <div>🟡</div>
+    <div style="flex:1;">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;">
+        <span class="bdg b-warn">要確認</span><span class="bdg b-cat">3-3 修繕費</span>
+        <span class="bdg b-acc">修繕費</span><span class="bdg b-mon">2026-01</span>
+      </div>
+      <div class="ic-msg">【3-3・高】修繕費に 523,490円 の計上があります。20万円以上の修繕は資本的支出として固定資産計上が必要な場合があります。現状回復目的か価値向上目的かを確認してください。</div>
+    </div>
+  </div>
+
+</div>
+</body></html>
