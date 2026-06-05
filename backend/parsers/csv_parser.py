@@ -280,15 +280,51 @@ def parse_freee_balance(content: str, use_ending: bool = False) -> dict:
 
     amount_col = ending_col if use_ending else opening_col
 
+    skip_keywords = ["の部", "合計", "構成比", "取引先別", "期間", "表示単位",
+                     "試算表", "帳票名"]
+
+    # 各depth レベルの「現在の科目名」を記録するスタック
+    # freeeの階層: 0=大区分, 1=中区分, 2=主科目, 3=補助科目, 4=取引先
+    current_at_depth: dict = {}
+
     for line in lines:
         line = line.strip()
         if not line:
             continue
         parts = _split_csv_line(line)
-        if len(parts) <= amount_col:
+
+        # どの深さに値があるか確認
+        account = ""
+        depth   = -1
+        for i in range(min(8, len(parts))):
+            v = parts[i].strip().strip('"')
+            if v:
+                account = v
+                depth   = i
+                break
+
+        if not account or depth < 0:
             continue
 
-        # 金額列の値を取得
+        # 現在の深さより深いスタックをクリア
+        for d in list(current_at_depth.keys()):
+            if d > depth:
+                del current_at_depth[d]
+
+        # スキップキーワードを含む行はスタックも更新しない
+        if any(k in account for k in skip_keywords):
+            continue
+
+        # スタックを更新
+        current_at_depth[depth] = account
+
+        # depth >= 5 は詳細すぎるため除外
+        if depth >= 5:
+            continue
+
+        # 金額を取得
+        if len(parts) <= amount_col:
+            continue
         amount_str = parts[amount_col].strip().strip('"')
         if not amount_str or amount_str in ("0", "0.0", ""):
             continue
@@ -297,41 +333,21 @@ def parse_freee_balance(content: str, use_ending: bool = False) -> dict:
         except ValueError:
             continue
 
-        # 勘定科目名を階層から取得
-        # 列0〜7の中で値のある最初の（最も左の）セルが科目名
-        account = ""
-        depth   = 0
-        for i in range(min(8, len(parts))):
-            v = parts[i].strip().strip('"')
-            if v:
-                account = v
-                depth   = i
-                break
-
-        if not account:
-            continue
-
-        # スキップ条件:
-        # ① ヘッダー行（「資産の部」「負債の部」「構成比」等）
-        # ② 取引先別の集計行ラベル（「取引先別」）
-        # ③ 深すぎる階層（depth >= 4 は取引先別の内訳）
-        skip_keywords = ["の部", "合計", "構成比", "取引先別", "期間", "表示単位",
-                         "試算表", "帳票名"]
-        if any(k in account for k in skip_keywords):
-            continue
-        if depth >= 4:   # 取引先別の内訳（深い階層）は除外
-            continue
-
-        # 補助科目がある場合: 列1つ右が補助科目名
-        # freeeでは勘定科目の直下に "paild", "りそな　当座" 等が並ぶ
-        # これらを「勘定科目（補助科目）」として登録
-        if depth >= 2:
-            # 親科目（1つ上のレベル）を求めてキーを作る
-            # 簡易実装: depth=2 なら主科目、depth=3 なら補助科目
+        # キーを生成
+        if depth <= 2:
+            # 主科目レベル: そのまま登録
             key = account
-            balances[key] = amount
+        elif depth == 3:
+            # 補助科目レベル（りそな　当座, paild等）
+            parent = current_at_depth.get(2, "")
+            key = f"{parent}（{account}）" if parent else account
         else:
-            balances[account] = amount
+            # depth=4: 取引先レベル（freeeの補助元帳相当）
+            # 主科目（depth=2）をキーの親として使う
+            parent = current_at_depth.get(2, current_at_depth.get(3, ""))
+            key = f"{parent}（{account}）" if parent else account
+
+        balances[key] = amount
 
     return balances
 
