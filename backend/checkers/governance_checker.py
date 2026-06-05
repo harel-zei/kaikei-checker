@@ -322,8 +322,8 @@ def _check_5_4_entertainment(df: pd.DataFrame) -> List[Dict[str, Any]]:
     for acct in ["会議費", "福利厚生費"]:
         kw_entries = df[
             df["debit_account"].astype(str).str.contains(acct, na=False) &
-            df.get("description", pd.Series(dtype=str)).astype(str).apply(
-                lambda x: any(k in x for k in KW_ENTERTAINMENT)
+            df.get("description", pd.Series(dtype=str)).fillna("").astype(str).apply(
+                lambda x: bool(x) and any(k in x for k in KW_ENTERTAINMENT)
             )
         ]
         for _, row in kw_entries.iterrows():
@@ -354,8 +354,8 @@ def _check_5_5_withholding(df: pd.DataFrame) -> List[Dict[str, Any]]:
         (
             df["debit_account"].astype(str).str.contains("支払手数料|外注費", na=False)
         ) &
-        df.get("description", pd.Series(dtype=str)).astype(str).apply(
-            lambda x: any(k in x for k in KW_WITHHOLDING)
+        df.get("description", pd.Series(dtype=str)).fillna("").astype(str).apply(
+            lambda x: bool(x) and any(k in x for k in KW_WITHHOLDING)
         ) &
         (df["debit_amount"] > 50000)  # 少額は除外
     ]

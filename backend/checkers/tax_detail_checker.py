@@ -92,7 +92,7 @@ def _check_2_1_reduced_rate(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return issues
 
     targets = df[
-        df["description"].astype(str).apply(lambda x: _has_keyword(x, KW_REDUCED_TAX)) &
+        df["description"].fillna("").astype(str).apply(lambda x: _has_keyword(x, KW_REDUCED_TAX)) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
@@ -117,7 +117,7 @@ def _check_2_2_card_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     targets = df[
         df["debit_account"].astype(str).str.contains("支払手数料", na=False) &
-        df["description"].astype(str).apply(lambda x: _has_keyword(x, KW_CARD_FEE)) &
+        df["description"].fillna("").astype(str).apply(lambda x: _has_keyword(x, KW_CARD_FEE)) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
@@ -159,7 +159,7 @@ def _check_2_3_govt_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return True
 
     targets = df[
-        df["description"].astype(str).apply(_is_genuine_govt) &
+        df["description"].fillna("").astype(str).apply(_is_genuine_govt) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
@@ -186,7 +186,7 @@ def _check_2_4_membership_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     targets = df[
         df["debit_account"].astype(str).str.contains("諸会費", na=False) &
-        df["description"].astype(str).apply(lambda x: _has_keyword(x, KW_CARD_ANNUAL)) &
+        df["description"].fillna("").astype(str).apply(lambda x: _has_keyword(x, KW_CARD_ANNUAL)) &
         df[col].astype(str).apply(_is_non_taxable)
     ]
     for _, row in targets.iterrows():
@@ -211,13 +211,13 @@ def _check_2_5_overseas_vendor(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return issues
 
     target_accounts = ["広告宣伝費", "通信費", "支払手数料", "諸会費", "ソフトウェア", "システム費"]
-    acc_mask = df["debit_account"].astype(str).apply(
-        lambda x: isinstance(x, str) and x not in ("nan", "None", "") and any(a in x for a in target_accounts)
+    acc_mask = df["debit_account"].fillna("").astype(str).apply(
+        lambda x: bool(x) and any(a in x for a in target_accounts)
     )
 
     targets = df[
         acc_mask &
-        df["description"].astype(str).apply(lambda x: _has_keyword(x, KW_OVERSEAS_VENDOR)) &
+        df["description"].fillna("").astype(str).apply(lambda x: _has_keyword(x, KW_OVERSEAS_VENDOR)) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
@@ -243,13 +243,13 @@ def _check_2_6_overseas_travel(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return issues
 
     target_accounts = ["旅費交通費", "接待交際費", "会議費"]
-    acc_mask = df["debit_account"].astype(str).apply(
-        lambda x: isinstance(x, str) and x not in ("nan", "None", "") and any(a in x for a in target_accounts)
+    acc_mask = df["debit_account"].fillna("").astype(str).apply(
+        lambda x: bool(x) and any(a in x for a in target_accounts)
     )
 
     targets = df[
         acc_mask &
-        df["description"].astype(str).apply(lambda x: _has_keyword(x, KW_OVERSEAS_TRAVEL)) &
+        df["description"].fillna("").astype(str).apply(lambda x: _has_keyword(x, KW_OVERSEAS_TRAVEL)) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
@@ -288,7 +288,7 @@ def _check_2_7_service_award(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return False
 
     targets = df[
-        df["description"].astype(str).apply(_is_award) &
+        df["description"].fillna("").astype(str).apply(_is_award) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
@@ -328,7 +328,7 @@ def _check_2_8_newspaper(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return True
 
     targets = df[
-        df["description"].astype(str).apply(_is_paper_newspaper) &
+        df["description"].fillna("").astype(str).apply(_is_paper_newspaper) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
