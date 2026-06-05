@@ -328,7 +328,7 @@
       <div id="modalFileList" style="margin:10px 0;"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
         <button class="btn btn-secondary" onclick="closeSaveModal()">キャンセル</button>
-        <button class="btn btn-primary" id="modalSaveBtn" onclick="savePriorFiles()" disabled>保存する</button>
+        <button class="btn btn-primary" id="modalSaveBtn" onclick="console.log('SaveBtn clicked, modalFiles:',modalFiles.length,'currentClient:',currentClient); savePriorFiles();" disabled>保存する</button>
       </div>
     </div>
   </div>
@@ -678,6 +678,7 @@
   }
 
   async function savePriorFiles() {
+    console.log('[savePriorFiles] start, client:', currentClient, 'files:', modalFiles.length);
     if (!currentClient) { alert('クライアント名を入力してください'); return; }
     if (modalFiles.length === 0) { alert('ファイルを選択してください'); return; }
 
@@ -686,16 +687,22 @@
 
     try {
       // ファイルをJSで読み込んでからFormDataで送信
+      console.log('[savePriorFiles] building FormData...');
       const fd = new FormData();
       for (const f of modalFiles) {
+        console.log('  adding file:', f.name, f.size, 'bytes');
         const blob = new Blob([f], { type: 'text/plain' });
         fd.append('files', blob, f.name);
       }
+      const url = `/api/clients/${encodeURIComponent(currentClient)}/save-prior`;
+      console.log('[savePriorFiles] fetching:', url);
 
-      const res  = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/save-prior`, {
+      const res  = await fetch(url, {
         method: 'POST', body: fd,
       });
+      console.log('[savePriorFiles] response status:', res.status);
       const text = await res.text();
+      console.log('[savePriorFiles] response body:', text.slice(0,200));
       let data;
       try { data = JSON.parse(text); }
       catch(e) { throw new Error('サーバーエラー: ' + text.slice(0,100)); }
