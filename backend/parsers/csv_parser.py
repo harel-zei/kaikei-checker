@@ -12,6 +12,9 @@ def detect_software(content: str) -> str:
     first_lines = "\n".join(content.split("\n")[:5])
     if re.search(r'"21\d\d",\d+,"","R\.\d{2}/\d{2}/\d{2}"', first_lines):
         return "yayoi_raw"
+    # freee 仕訳帳（新）CSV: ヘッダーが "No","取引日","管理番号","借方勘定科目" で始まる
+    if '"No"' in first_lines and '"取引日"' in first_lines and '"借方勘定科目"' in first_lines:
+        return "freee_new"
     if "借方勘定科目" in content and "貸方勘定科目" in content:
         return "yayoi"
     if "取引No" in content or ("発生日" in content and "借方勘定科目" in content):
@@ -123,6 +126,78 @@ def parse_moneyforward(content: str) -> pd.DataFrame:
     return _normalize(df)
 
 
+def parse_freee_new(content: str) -> pd.DataFrame:
+    """
+    freee 仕訳帳（新）CSV をパースする。
+
+    主要な列マッピング:
+      [1]  取引日        → date
+      [3]  借方勘定科目  → debit_account
+      [7]  借方金額      → debit_amount
+      [8]  借方税区分    → debit_tax
+      [9]  借方税金額    → debit_tax_amt
+      [14] 借方取引先名  → debit_sub
+      [36] 貸方勘定科目  → credit_account
+      [40] 貸方金額      → credit_amount
+      [41] 貸方税区分    → credit_tax
+      [42] 貸方税金額    → credit_tax_amt
+      [47] 貸方取引先名  → credit_sub
+      [84] 仕訳番号      → slip_no
+      [90] 取引内容      → description
+    """
+    try:
+        df_raw = pd.read_csv(
+            io.StringIO(content),
+            encoding="utf-8-sig",
+            on_bad_lines="skip",
+            dtype=str,
+        )
+    except Exception:
+        return pd.DataFrame()
+
+    if df_raw.empty:
+        return pd.DataFrame()
+
+    col_names = list(df_raw.columns)
+
+    # 列名で安全にマッピング
+    def gcol(name: str) -> Optional[str]:
+        """列名から DataFrame の列名を返す"""
+        for c in col_names:
+            if name in c:
+                return c
+        return None
+
+    mapping = {
+        gcol("取引日"):        "date",
+        gcol("借方勘定科目"):  "debit_account",
+        gcol("借方金額"):      "debit_amount",
+        gcol("借方税区分"):    "debit_tax",
+        gcol("借方税金額"):    "debit_tax_amt",
+        gcol("借方取引先名"):  "debit_sub",
+        gcol("貸方勘定科目"):  "credit_account",
+        gcol("貸方金額"):      "credit_amount",
+        gcol("貸方税区分"):    "credit_tax",
+        gcol("貸方税金額"):    "credit_tax_amt",
+        gcol("貸方取引先名"):  "credit_sub",
+        gcol("仕訳番号"):      "slip_no",
+        gcol("取引内容"):      "description",
+    }
+    mapping = {k: v for k, v in mapping.items() if k is not None}
+
+    df = df_raw.rename(columns=mapping)
+
+    # 借方・貸方両方にある「勘定科目ショートカット２」は先に除外
+    # (借方勘定科目が複数マッチする可能性への対処)
+    needed = ["date", "debit_account", "debit_amount", "debit_tax",
+              "credit_account", "credit_amount", "credit_tax",
+              "debit_sub", "credit_sub", "slip_no", "description",
+              "debit_tax_amt", "credit_tax_amt"]
+    df = df[[c for c in needed if c in df.columns]].copy()
+
+    return _normalize(df)
+
+
 def _to_num(val) -> float:
     try:
         return float(str(val).replace(",", "").strip())
@@ -149,6 +224,7 @@ def parse_csv(content: str) -> tuple:
         "yayoi_raw":    parse_yayoi_raw,
         "yayoi":        parse_yayoi,
         "freee":        parse_freee,
+        "freee_new":    parse_freee_new,   # freee 仕訳帳（新）CSV
         "moneyforward": parse_moneyforward,
     }
     df = parsers.get(software, parse_yayoi_raw)(content)

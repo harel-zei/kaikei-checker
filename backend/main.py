@@ -392,7 +392,8 @@ async def _run_checks(
     valid_dates = df["date"].dropna()
     sw_labels = {
         "yayoi_raw": "弥生会計", "yayoi": "弥生会計",
-        "freee": "freee", "moneyforward": "MoneyForward",
+        "freee": "freee", "freee_new": "freee（新形式）",
+        "moneyforward": "MoneyForward",
     }
     if ob:
         c.setdefault("log", []).append(f"📊 当期首残高: {len(ob)}科目（{ob_source}）")
