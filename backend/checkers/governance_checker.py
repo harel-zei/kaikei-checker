@@ -83,7 +83,9 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # ──────────────────────────────────────────────────────────
 def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
-    金額・借方科目が同じで、日付が7日以内、摘要が類似している仕訳ペアを検知
+    金額・借方科目が同じで、日付が7日以内、摘要が類似している仕訳を検知。
+    N件の重複がある場合、ペアをそれぞれ表示するのではなく
+    グループ化して1件の指摘にまとめる。
     """
     issues = []
     if df.empty:
@@ -93,7 +95,8 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if len(work) < 2:
         return issues
 
-    found_pairs = set()
+    # 隣接リスト（重複関係）を構築
+    adj: dict = {i: set() for i in range(len(work))}
 
     for i in range(len(work)):
         for j in range(i + 1, min(i + 50, len(work))):  # 近傍50件だけ比較
@@ -116,13 +119,11 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
             if days_diff > 7:
                 continue
 
-            # 摘要の類似度（簡易）
-            desc_i = str(ri.get("description", ""))
-            desc_j = str(rj.get("description", ""))
+            # 摘要の類似度（簡易）― NaN対策でdesc_safeを使用
+            desc_i = desc_safe(ri)
+            desc_j = desc_safe(rj)
             similar = _simple_similarity(desc_i, desc_j)
-
-            key = (min(i, j), max(i, j))
-            if similar <= 0.6 or key in found_pairs:
+            if similar <= 0.6:
                 continue
 
             # ── 除外ルール ──────────────────────────────
@@ -137,19 +138,53 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 continue
             # ────────────────────────────────────────────
 
-            found_pairs.add(key)
-            issues.append({
-                    "level": "warning", "category": "5-2 重複仕訳",
-                    "check_id": "5-2", "account": str(ri["debit_account"]),
-                    "month": str(ri["date"].to_period("M")),
-                    "message": (
-                        f"【5-2・高】重複仕訳の疑いがあります: "
-                        f"{ri['date'].date()} と {rj['date'].date()} に"
-                        f"同額（{ri['debit_amount']:,.0f}円）・同科目（{ri['debit_account']}）の"
-                        f"仕訳が {days_diff}日 以内に存在します。"
-                        f"摘要: 「{desc_i[:20]}」vs「{desc_j[:20]}」"
-                    ),
-                })
+            adj[i].add(j)
+            adj[j].add(i)
+
+    # 連結成分（重複グループ）を求める
+    visited: set = set()
+
+    def _bfs(start: int) -> list:
+        component = []
+        queue = [start]
+        while queue:
+            node = queue.pop()
+            if node in visited:
+                continue
+            visited.add(node)
+            component.append(node)
+            queue.extend(adj[node] - visited)
+        return component
+
+    for i in range(len(work)):
+        if i in visited or not adj[i]:
+            visited.add(i)
+            continue
+        component = _bfs(i)
+        if len(component) < 2:
+            continue
+
+        # グループ全体を1件の指摘にまとめる
+        rows = [work.iloc[idx] for idx in sorted(component)]
+        amount    = rows[0]["debit_amount"]
+        account   = str(rows[0]["debit_account"])
+        dates_str = "、".join(str(r["date"].date()) for r in rows)
+        descs     = list(dict.fromkeys(desc_safe(r) for r in rows if desc_safe(r)))
+        desc_part = "　摘要: " + "、".join(f"「{d[:20]}」" for d in descs[:4]) if descs else ""
+
+        issues.append({
+            "level": "warning", "category": "5-2 重複仕訳",
+            "check_id": "5-2", "account": account,
+            "month": str(rows[0]["date"].to_period("M")),
+            "message": (
+                f"【5-2・高】重複仕訳の疑いがあります: "
+                f"同額（{amount:,.0f}円）・同科目（{account}）の仕訳が "
+                f"{len(component)}件 あります。"
+                f"日付: {dates_str}"
+                f"{desc_part}"
+            ),
+        })
+
     return issues
 
 

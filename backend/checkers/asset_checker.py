@@ -15,6 +15,12 @@ FIXED_ASSET_ACCOUNTS = [
     "無形固定資産",
 ]
 
+# 固定資産科目に部分一致するが実際はPL科目（除外対象）
+FIXED_ASSET_EXCLUDE = [
+    "ソフトウェア使用費", "ソフトウェア償却費", "ソフトウェア償却",
+    "建物管理費", "建物清掃費",
+]
+
 # 修繕費科目
 REPAIR_ACCOUNTS = ["修繕費"]
 
@@ -41,7 +47,9 @@ def _check_3_1_sme_deduction(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     issues = []
     acc_mask = df["debit_account"].fillna("").astype(str).apply(
-        lambda x: bool(x) and any(a in x for a in FIXED_ASSET_ACCOUNTS)
+        lambda x: bool(x)
+                  and any(a in x for a in FIXED_ASSET_ACCOUNTS)
+                  and not any(e in x for e in FIXED_ASSET_EXCLUDE)
     )
     asset_entries = df[acc_mask].copy()
     if asset_entries.empty:
@@ -91,7 +99,9 @@ def _check_3_2_under_threshold(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """固定資産科目に10万円未満の計上→消耗品費等で費用化すべき"""
     issues = []
     acc_mask = df["debit_account"].fillna("").astype(str).apply(
-        lambda x: bool(x) and any(a in x for a in FIXED_ASSET_ACCOUNTS)
+        lambda x: bool(x)
+                  and any(a in x for a in FIXED_ASSET_ACCOUNTS)
+                  and not any(e in x for e in FIXED_ASSET_EXCLUDE)
     )
     target = df[acc_mask & (df["debit_amount"] > 0) & (df["debit_amount"] < THRESHOLD_EXPENSE)]
 
