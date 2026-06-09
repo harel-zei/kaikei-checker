@@ -1,0 +1,163 @@
+INFO:     Started server process [17580]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+[17:38:49] POST /api/check-auto
+  Å® ERROR: argument of type 'float' is not iterable
+Traceback (most recent call last):
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\main.py", line 49, in log_all_requests
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\routing.py", line 674, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\routing.py", line 328, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\main.py", line 290, in check_auto
+    return await _run_checks(classified, check_until=check_until, client_settings=client_settings)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\main.py", line 391, in _run_checks
+    issues.extend(check_tax(df))
+                  ^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\checkers\tax_checker.py", line 44, in check_tax
+    issues.extend(_check_overseas_travel(df))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\checkers\tax_checker.py", line 137, in _check_overseas_travel
+    acc_mask = df["debit_account"].astype(str).apply(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\series.py", line 5084, in apply
+    ).apply()
+      ^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\apply.py", line 1520, in apply
+    return self.apply_standard()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\apply.py", line 1578, in apply_standard
+    mapped = obj._map_values(mapper=curried)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\base.py", line 1020, in _map_values
+    return arr.map(mapper, na_action=na_action)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\arrays\base.py", line 2745, in map
+    return map_array(self, mapper, na_action=na_action)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\algorithms.py", line 1715, in map_array
+    return lib.map_infer(values, mapper)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pandas/_libs/lib.pyx", line 3071, in pandas._libs.lib.map_infer
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\checkers\tax_checker.py", line 138, in <lambda>
+    lambda x: x not in ("nan", "None", "") and any(a in x for a in target_accounts)
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\checkers\tax_checker.py", line 138, in <genexpr>
+    lambda x: x not in ("nan", "None", "") and any(a in x for a in target_accounts)
+                                                   ^^^^^^
+TypeError: argument of type 'float' is not iterable
+INFO:     127.0.0.1:50774 - "POST /api/check-auto HTTP/1.1" 500 Internal Server Error
+[17:39:10] POST /api/check-auto
+  Å® ERROR: argument of type 'float' is not iterable
+Traceback (most recent call last):
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\main.py", line 49, in log_all_requests
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\routing.py", line 674, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\routing.py", line 328, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\main.py", line 290, in check_auto
+    return await _run_checks(classified, check_until=check_until, client_settings=client_settings)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\main.py", line 391, in _run_checks
+    issues.extend(check_tax(df))
+                  ^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\checkers\tax_checker.py", line 44, in check_tax
+    issues.extend(_check_overseas_travel(df))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\checkers\tax_checker.py", line 137, in _check_overseas_travel
+    acc_mask = df["debit_account"].astype(str).apply(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\series.py", line 5084, in apply
+    ).apply()
+      ^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\apply.py", line 1520, in apply
+    return self.apply_standard()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\apply.py", line 1578, in apply_standard
+    mapped = obj._map_values(mapper=curried)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\base.py", line 1020, in _map_values
+    return arr.map(mapper, na_action=na_action)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\arrays\base.py", line 2745, in map
+    return map_array(self, mapper, na_action=na_action)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\AppData\Local\Programs\Python\Python312\Lib\site-packages\pandas\core\algorithms.py", line 1715, in map_array
+    return lib.map_infer(values, mapper)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pandas/_libs/lib.pyx", line 3071, in pandas._libs.lib.map_infer
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\checkers\tax_checker.py", line 138, in <lambda>
+    lambda x: x not in ("nan", "None", "") and any(a in x for a in target_accounts)
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\iwasa\Documents\kaikei-checker\backend\checkers\tax_checker.py", line 138, in <genexpr>
+    lambda x: x not in ("nan", "None", "") and any(a in x for a in target_accounts)
+                                                   ^^^^^^
+TypeError: argument of type 'float' is not iterable
+INFO:     127.0.0.1:57404 - "POST /api/check-auto HTTP/1.1" 500 Internal Server Error
+[17:39:24] GET /
+  Å® 200
+INFO:     127.0.0.1:53627 - "GET / HTTP/1.1" 200 OK

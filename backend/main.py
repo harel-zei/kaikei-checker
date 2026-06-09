@@ -38,6 +38,22 @@ app = FastAPI(title="会計データチェックシステム", version="1.5.0")
 frontend_path = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=str(frontend_path)), name="static")
 
+
+@app.middleware("http")
+async def log_all_requests(request, call_next):
+    """全リクエストをログに記録する"""
+    import datetime, traceback
+    log_line = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {request.method} {request.url.path}"
+    print(log_line, flush=True)
+    try:
+        response = await call_next(request)
+        print(f"  → {response.status_code}", flush=True)
+        return response
+    except Exception as e:
+        print(f"  → ERROR: {e}", flush=True)
+        traceback.print_exc()
+        return JSONResponse({"detail": str(e)}, status_code=500)
+
 # ── パスワード認証 ─────────────────────────────────────────
 # 環境変数 APP_PASSWORD が設定されている場合のみ認証を要求
 # APP_USERNAME のデフォルトは "admin"
