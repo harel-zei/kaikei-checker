@@ -12,7 +12,16 @@ from typing import List, Dict, Any
 from checkers.check_utils import desc_safe, month_safe, date_safe, is_store_address
 
 # ─── キーワードマスタ ───
-KW_REDUCED_TAX = ["弁当", "茶", "菓子", "食料品", "土産", "お茶", "おにぎり", "サンドイッチ", "惣菜"]
+# ※一文字の「茶」は地名（天下茶屋・茶屋町等）に誤反応するため使用しない
+KW_REDUCED_TAX = [
+    "弁当", "菓子", "食料品", "土産", "おにぎり", "サンドイッチ", "惣菜",
+    "お茶", "緑茶", "麦茶", "茶葉", "茶菓",
+]
+# 摘要にこれらが含まれる場合は飲食料品ではない（地名・店名・施設名等）
+KW_REDUCED_TAX_EXCLUDE = [
+    "茶屋",       # 天下茶屋・茶屋町など地名
+    "駐輪", "駐車", "交通", "切符", "乗車",
+]
 
 # 2-7: 精勤手当・永年勤続表彰（不課税）
 KW_SERVICE_AWARD = [
@@ -38,8 +47,11 @@ KW_CARD_FEE    = ["カード手数料", "EC決済", "決済手数料", "Amazon�
 KW_GOVT_FEE    = ["印紙", "住民票", "登録免許税", "パスポート", "収入印紙",
                    "公証", "登記", "定款認証", "行政", "役所", "国税", "都税"]
 # 「証明書」は残高証明書（銀行）など行政以外でも使われるため除外済み
-KW_CARD_ANNUAL = ["年会費", "JCB", "VISA", "アメックス", "Amex", "AMEX",
-                   "マスター", "Mastercard", "ダイナース", "カード"]
+# クレカ年会費の判定: 「年会費」単独では同業団体年会費（不課税が正しい）や
+# 「新年会費」（新年会の会費）に誤反応するため、カードと特定できる語を必須とする
+KW_CARD_BRAND = ["JCB", "VISA", "アメックス", "Amex", "AMEX",
+                  "マスター", "Mastercard", "ダイナース", "カード", "クレカ"]
+KW_CARD_ANNUAL_EXCLUDE = ["新年会", "忘年会", "懇親会", "歓迎会", "送別会"]
 KW_OVERSEAS_VENDOR = [
     "Google", "AWS", "Amazon Web", "Meta", "Facebook", "Microsoft",
     "ZOOM", "Zoom", "Adobe", "Dropbox", "Slack", "GitHub", "Netflix",
@@ -92,7 +104,10 @@ def _check_2_1_reduced_rate(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return issues
 
     targets = df[
-        df["description"].fillna("").astype(str).apply(lambda x: _has_keyword(x, KW_REDUCED_TAX)) &
+        df["description"].fillna("").astype(str).apply(
+            lambda x: _has_keyword(x, KW_REDUCED_TAX)
+                      and not _has_keyword(x, KW_REDUCED_TAX_EXCLUDE)
+        ) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
@@ -186,7 +201,10 @@ def _check_2_4_membership_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     targets = df[
         df["debit_account"].astype(str).str.contains("諸会費", na=False) &
-        df["description"].fillna("").astype(str).apply(lambda x: _has_keyword(x, KW_CARD_ANNUAL)) &
+        df["description"].fillna("").astype(str).apply(
+            lambda x: _has_keyword(x, KW_CARD_BRAND)
+                      and not _has_keyword(x, KW_CARD_ANNUAL_EXCLUDE)
+        ) &
         df[col].astype(str).apply(_is_non_taxable)
     ]
     for _, row in targets.iterrows():
