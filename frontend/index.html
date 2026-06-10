@@ -854,6 +854,24 @@
     addFiles(e.dataTransfer.files);
   }
 
+  // ── JSONレスポンス取得ヘルパー（HTML返却時に分かりやすいエラーを出す） ──
+  async function fetchJSON(url, options) {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      // サーバーがHTMLを返した場合（Renderスリープ明け等）
+      if (res.status === 503 || res.status === 502) {
+        throw new Error('サーバーが起動中です（Renderのスリープ解除に30〜60秒かかります）。しばらく待ってから再実行してください。');
+      }
+      throw new Error(`サーバーエラー (${res.status})。しばらく待ってから再実行してください。`);
+    }
+    if (!res.ok) throw new Error(data.detail || `エラー (${res.status})`);
+    return data;
+  }
+
   // ── チェック実行 ──
   async function runCheck() {
     if (selectedFiles.length === 0) return alert('ファイルを選択してください');
@@ -864,9 +882,7 @@
     if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
-      const res  = await fetch('/api/check-auto', { method: 'POST', body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
+      const data = await fetchJSON('/api/check-auto', { method: 'POST', body: fd });
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
@@ -874,8 +890,7 @@
   async function runSample() {
     showLoading();
     try {
-      const res  = await fetch('/api/sample');
-      const data = await res.json();
+      const data = await fetchJSON('/api/sample');
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
