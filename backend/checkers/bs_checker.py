@@ -4,6 +4,7 @@
 - 売掛金・買掛金を補助科目（取引先）単位でチェック
 - 期首残高未提供時はスキップ（誤検知防止）
 """
+import re
 import pandas as pd
 from typing import List, Dict, Any
 
@@ -78,8 +79,11 @@ def _check_cash_balance(df: pd.DataFrame, ob: dict) -> List[Dict[str, Any]]:
     skipped = []
 
     for base_acc in CASH_ACCOUNTS:
-        d_rows = df[df["debit_account"].astype(str).str.contains(base_acc, na=False)]
-        c_rows = df[df["credit_account"].astype(str).str.contains(base_acc, na=False)]
+        # 厳密一致: 「現金」が「小口現金」に誤ってヒットしないよう
+        # 「科目名そのもの」か「科目名（補助科目）」のみにマッチ
+        pat = f"^{re.escape(base_acc)}$|^{re.escape(base_acc)}（"
+        d_rows = df[df["debit_account"].fillna("").astype(str).str.match(pat)]
+        c_rows = df[df["credit_account"].fillna("").astype(str).str.match(pat)]
         if d_rows.empty and c_rows.empty:
             continue
 
@@ -107,11 +111,12 @@ def _check_cash_balance(df: pd.DataFrame, ob: dict) -> List[Dict[str, Any]]:
 
             for month, bal in cumulative[cumulative < 0].items():
                 issues.append({
-                    "level": "error", "category": "BS", "account": label, "month": str(month),
+                    "level": "warning", "category": "BS", "account": label, "month": str(month),
                     "message": (
-                        f"【要確認】{label} の残高が {bal:,.0f}円 とマイナスになっています"
-                        f"（期首{opening:,.0f}円 + 当期増減）。"
-                        "仕訳漏れまたは誤入力の可能性があります。"
+                        f"【要確認】{label} の仕訳上の残高が {bal:,.0f}円 とマイナスになっています"
+                        f"（期首{opening:,.0f}円 + 当期仕訳増減）。"
+                        "入金仕訳が漏れている可能性があります。"
+                        "銀行連携等で自動計上されている仕訳が仕訳帳CSVに含まれていない場合も同様の表示になります。"
                     ),
                 })
 
