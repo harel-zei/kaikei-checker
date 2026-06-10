@@ -8,8 +8,9 @@ from typing import List, Dict, Any
 # 売上科目
 SALES_ACCOUNTS = ["売上", "売上高", "売上金額"]
 
-# 仕入科目
-COGS_ACCOUNTS = ["仕入", "仕入高", "売上原価", "製造原価"]
+# 仕入科目（棚卸高も含める: 期首商品棚卸高は借方/期末商品棚卸高は貸方で
+# 借方−貸方のネット計算により売上原価が正しく算出される）
+COGS_ACCOUNTS = ["仕入", "仕入高", "売上原価", "製造原価", "棚卸高"]
 
 # 毎月計上されるべき費用
 MONTHLY_FIXED_EXPENSES = ["減価償却費", "地代家賃", "リース料"]
@@ -56,15 +57,25 @@ def _check_gross_profit_ratio(df: pd.DataFrame) -> List[Dict[str, Any]]:
     sales_pattern = "|".join(SALES_ACCOUNTS)
     cogs_pattern = "|".join(COGS_ACCOUNTS)
 
-    # 売上（貸方）
-    monthly_sales = df[
-        df["credit_account"].astype(str).str.contains(sales_pattern, na=False)
-    ].groupby(df["date"].dt.to_period("M"))["credit_amount"].sum()
+    period = df["date"].dt.to_period("M")
 
-    # 仕入（借方）
-    monthly_cogs = df[
-        df["debit_account"].astype(str).str.contains(cogs_pattern, na=False)
-    ].groupby(df["date"].dt.to_period("M"))["debit_amount"].sum()
+    # 売上 = 貸方 − 借方（売上値引・返品を控除したネット額）
+    sales_cr = df[
+        df["credit_account"].fillna("").astype(str).str.contains(sales_pattern, na=False)
+    ].groupby(period)["credit_amount"].sum()
+    sales_dr = df[
+        df["debit_account"].fillna("").astype(str).str.contains(sales_pattern, na=False)
+    ].groupby(period)["debit_amount"].sum()
+    monthly_sales = sales_cr.subtract(sales_dr, fill_value=0)
+
+    # 売上原価 = 借方 − 貸方（仕入値引・期末棚卸高を控除したネット額）
+    cogs_dr = df[
+        df["debit_account"].fillna("").astype(str).str.contains(cogs_pattern, na=False)
+    ].groupby(period)["debit_amount"].sum()
+    cogs_cr = df[
+        df["credit_account"].fillna("").astype(str).str.contains(cogs_pattern, na=False)
+    ].groupby(period)["credit_amount"].sum()
+    monthly_cogs = cogs_dr.subtract(cogs_cr, fill_value=0)
 
     if monthly_sales.empty:
         return issues
@@ -98,7 +109,11 @@ def _check_gross_profit_ratio(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "category": "PL",
                 "account": "粗利率",
                 "month": str(month),
-                "message": f"【要確認】{month} の粗利率が {ratio:.1f}% で、平均（{mean_ratio:.1f}%）から大きく乖離しています。{reason}。",
+                "message": (
+                    f"【要確認】{month} の粗利率が {ratio:.1f}% で、"
+                    f"期中平均（{mean_ratio:.1f}%）から大きく乖離しています。{reason}。"
+                    "※棚卸仕訳を決算月のみ計上している場合、月次粗利率は仕入ベースの簡易値です。"
+                ),
                 "detail": {
                     "sales": float(row["sales"]),
                     "cogs": float(row["cogs"]),
