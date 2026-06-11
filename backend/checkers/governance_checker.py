@@ -1,4 +1,4 @@
-"""
+﻿"""
 カテゴリ5: 税務リスク・ガバナンスチェック
 5-1: 役員給与の定期同額要件
 5-2: 重複仕訳の検知
@@ -298,7 +298,7 @@ def _check_5_3_digit_error(df: pd.DataFrame) -> List[Dict[str, Any]]:
         for p, val in monthly.items():
             if val > mean_val * DIGIT_ERROR_MULTIPLIER and abs(val - mean_val) > 50000:
                 issues.append({
-                    "level": "warning", "category": "5-3 桁数ミス疑い",
+                    "level": "warning", "category": "5-3 桁数ミスの可能性",
                     "check_id": "5-3", "account": account,
                     "month": str(p),
                     "message": (
@@ -309,7 +309,7 @@ def _check_5_3_digit_error(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 })
             elif val > 0 and val < mean_val / DIGIT_ERROR_MULTIPLIER and mean_val > 50000:
                 issues.append({
-                    "level": "warning", "category": "5-3 桁数ミス疑い",
+                    "level": "warning", "category": "5-3 桁数ミスの可能性",
                     "check_id": "5-3", "account": account,
                     "month": str(p),
                     "message": (
