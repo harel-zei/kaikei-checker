@@ -116,7 +116,7 @@ def _check_2_1_reduced_rate(df: pd.DataFrame) -> List[Dict[str, Any]]:
             "check_id": "2-1", "account": str(row["debit_account"]),
             "month": date_safe(row),
             "message": (
-                f"【2-1・中】摘要「{desc_safe(row)}」は飲食料品の疑いがありますが、"
+                f"【2-1・中】摘要「{desc_safe(row)}」は飲食料品の可能性がありますが、"
                 f"税区分が「{row[col]}」（10%）になっています。軽減税率8%を確認してください。"
             ),
         })

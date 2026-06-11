@@ -192,7 +192,7 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
             "check_id": "5-2", "account": account,
             "month": str(rows[0]["date"].to_period("M")),
             "message": (
-                f"【5-2・高】重複仕訳の疑いがあります: "
+                f"【5-2・高】重複仕訳の可能性があります: "
                 f"同額（{amount:,.0f}円）・同科目（{account}）の仕訳が "
                 f"{len(component)}件 あります。"
                 f"日付: {dates_str}"
