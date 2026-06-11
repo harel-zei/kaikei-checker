@@ -88,7 +88,10 @@ def check_tax_detail(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues.extend(_check_2_2_card_fee(df))
     issues.extend(_check_2_3_govt_fee(df))
     issues.extend(_check_2_4_membership_fee(df))
-    issues.extend(_check_2_5_overseas_vendor(df))
+    # 2-5（海外ベンダー）は廃止: Google/Apple/Zoom等の主要海外事業者は
+    # 適格請求書発行事業者に登録済みであり課税仕入で問題ない。
+    # B2Bのリバースチャージも課税売上割合95%以上なら経過措置で申告不要のため
+    # 指摘の実益がない。
     issues.extend(_check_2_6_overseas_travel(df))
     issues.extend(_check_2_7_service_award(df))
     issues.extend(_check_2_8_newspaper(df))
