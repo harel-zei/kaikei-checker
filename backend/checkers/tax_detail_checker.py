@@ -265,9 +265,16 @@ def _check_2_6_overseas_travel(df: pd.DataFrame) -> List[Dict[str, Any]]:
         lambda x: bool(x) and any(a in x for a in target_accounts)
     )
 
+    def _is_overseas(text: str) -> bool:
+        t = str(text)
+        # 「国内」と明記されている場合は海外ではない（例: JAL国内線航空券）
+        if "国内" in t:
+            return False
+        return _has_keyword(t, KW_OVERSEAS_TRAVEL)
+
     targets = df[
         acc_mask &
-        df["description"].fillna("").astype(str).apply(lambda x: _has_keyword(x, KW_OVERSEAS_TRAVEL)) &
+        df["description"].fillna("").astype(str).apply(_is_overseas) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
@@ -297,11 +304,14 @@ def _check_2_7_service_award(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     def _is_award(text: str) -> bool:
         t = str(text)
+        # 通勤手当・残業手当等の給与系手当は課税仕入で正しいため対象外
+        if any(k in t for k in ["通勤", "残業", "住宅手当", "家族手当", "資格手当"]):
+            return False
         # 精勤・永年勤続・表彰系キーワード
         if any(k in t for k in KW_SERVICE_AWARD):
             return True
-        # 「〇〇手当」パターン（手当という語を含むもの）
-        if "手当" in t and any(k in t for k in ["勤", "功", "表", "精", "永"]):
+        # 「〇〇手当」パターン（精勤・功労等の明確な語との組み合わせのみ）
+        if "手当" in t and any(k in t for k in ["精勤", "皆勤", "功労", "表彰", "永年"]):
             return True
         return False
 
