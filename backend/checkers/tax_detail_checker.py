@@ -52,10 +52,18 @@ KW_GOVT_FEE    = ["印紙", "住民票", "登録免許税", "パスポート", "
 KW_CARD_BRAND = ["JCB", "VISA", "アメックス", "Amex", "AMEX",
                   "マスター", "Mastercard", "ダイナース", "カード", "クレカ"]
 KW_CARD_ANNUAL_EXCLUDE = ["新年会", "忘年会", "懇親会", "歓迎会", "送別会"]
-KW_OVERSEAS_VENDOR = [
-    "Google", "AWS", "Amazon Web", "Meta", "Facebook", "Microsoft",
-    "ZOOM", "Zoom", "Adobe", "Dropbox", "Slack", "GitHub", "Netflix",
-    "Spotify", "Apple", "ChatGPT", "OpenAI", "Salesforce", "HubSpot",
+# 2-5: 適格請求書発行事業者として登録済みの主要海外ベンダー（指摘不要）
+KW_OVERSEAS_REGISTERED = [
+    "Google", "グーグル", "AWS", "Amazon", "アマゾン", "Meta", "Facebook",
+    "Microsoft", "マイクロソフト", "ZOOM", "Zoom", "Adobe", "アドビ",
+    "Dropbox", "Netflix", "Spotify", "Apple", "アップル", "Salesforce",
+    "Slack",
+]
+# 登録状況が不明・未登録の可能性がある海外ベンダー（登録確認を促す）
+KW_OVERSEAS_UNCERTAIN = [
+    "GitHub", "ChatGPT", "OpenAI", "Anthropic", "Claude", "HubSpot",
+    "Shopify", "Canva", "Notion", "Figma", "Midjourney", "Discord",
+    "Wix", "Squarespace", "Mailchimp", "Zapier", "Stripe",
 ]
 KW_OVERSEAS_TRAVEL = [
     "海外出張", "渡航", "航空券", "国際線", "海外ホテル", "海外現地",
@@ -88,10 +96,7 @@ def check_tax_detail(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues.extend(_check_2_2_card_fee(df))
     issues.extend(_check_2_3_govt_fee(df))
     issues.extend(_check_2_4_membership_fee(df))
-    # 2-5（海外ベンダー）は廃止: Google/Apple/Zoom等の主要海外事業者は
-    # 適格請求書発行事業者に登録済みであり課税仕入で問題ない。
-    # B2Bのリバースチャージも課税売上割合95%以上なら経過措置で申告不要のため
-    # 指摘の実益がない。
+    issues.extend(_check_2_5_overseas_vendor(df))
     issues.extend(_check_2_6_overseas_travel(df))
     issues.extend(_check_2_7_service_award(df))
     issues.extend(_check_2_8_newspaper(df))
@@ -227,7 +232,14 @@ def _check_2_4_membership_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 
 def _check_2_5_overseas_vendor(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """海外ベンダー（Google・AWS等）への支払が課税になっている"""
+    """
+    海外ベンダーへの支払が課税仕入になっている場合のチェック。
+
+    - Google・Apple・Zoom等の適格請求書発行事業者に登録済みの大手は
+      課税仕入で問題ないため指摘しない
+    - 登録状況が不明な海外ベンダーは、適格請求書発行事業者かどうかの
+      確認を促す（未登録なら経過措置80%/50%等への修正が必要）
+    """
     issues = []
     col = "debit_tax" if "debit_tax" in df.columns else None
     if not col:
@@ -238,21 +250,27 @@ def _check_2_5_overseas_vendor(df: pd.DataFrame) -> List[Dict[str, Any]]:
         lambda x: bool(x) and any(a in x for a in target_accounts)
     )
 
+    def _is_uncertain_overseas(text: str) -> bool:
+        # 登録済み大手にマッチする場合は指摘不要
+        if _has_keyword(text, KW_OVERSEAS_REGISTERED):
+            return False
+        return _has_keyword(text, KW_OVERSEAS_UNCERTAIN)
+
     targets = df[
         acc_mask &
-        df["description"].fillna("").astype(str).apply(lambda x: _has_keyword(x, KW_OVERSEAS_VENDOR)) &
+        df["description"].fillna("").astype(str).apply(_is_uncertain_overseas) &
         df[col].astype(str).apply(_has_tax_10)
     ]
     for _, row in targets.iterrows():
         issues.append({
-            "level": "error", "category": "2-5 海外ベンダー",
+            "level": "warning", "category": "2-5 海外ベンダー",
             "check_id": "2-5", "account": str(row["debit_account"]),
             "month": date_safe(row), "slip": slip_safe(row),
             "message": (
-                f"【2-5・高】摘要「{desc_safe(row)}」は海外ベンダーへの支払と"
-                "思われますが、税区分が課税（10%）になっています。"
-                "国外事業者からの役務提供は原則として不課税となります。"
-                "リバースチャージ対象かどうかを確認してください。"
+                f"【2-5・中】摘要「{desc_safe(row)}」は海外ベンダーへの支払と思われます。"
+                "この事業者が適格請求書発行事業者に登録されているか確認してください。"
+                "未登録の場合、課税仕入（10%）ではなく経過措置（80%控除等）の税区分への"
+                "修正が必要です。"
             ),
         })
     return issues
