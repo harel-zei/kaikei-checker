@@ -84,7 +84,6 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # 5-2: 日常的に同額が多発する科目・摘要は重複チェック対象外
 DUP_EXCLUDE_ACCOUNTS = ["支払手数料", "支払利息", "雑費"]
 DUP_EXCLUDE_KEYWORDS = ["振込手数料", "手数料", "利息", "振込料"]
-DUP_MIN_AMOUNT = 5_000  # 少額（定型手数料等）は重複チェックしない
 
 
 def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
@@ -98,7 +97,7 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if df.empty:
         return issues
 
-    work = df[df["debit_amount"] >= DUP_MIN_AMOUNT].copy()
+    work = df[df["debit_amount"] > 0].copy()
     # 手数料・利息系の科目を除外
     work = work[~work["debit_account"].fillna("").astype(str).apply(
         lambda x: any(a in x for a in DUP_EXCLUDE_ACCOUNTS)
