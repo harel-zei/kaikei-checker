@@ -40,6 +40,18 @@ def date_safe(row) -> str:
         return "不明"
 
 
+def slip_safe(row) -> str:
+    """伝票番号（仕訳番号）を安全に取得。nan/None は空文字に変換"""
+    v = row.get("slip_no", "")
+    s = str(v).strip()
+    if s.lower() in ("nan", "none", ""):
+        return ""
+    # "123.0" のような float 文字列を整数表記に
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    return s
+
+
 # 店舗名・住所と判断される除外ワード
 # これらが摘要に含まれる場合、役所・行政キーワードでも誤検知しない
 STORE_SUFFIXES = [

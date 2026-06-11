@@ -9,7 +9,7 @@
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Any
-from checkers.check_utils import desc_safe, month_safe, date_safe
+from checkers.check_utils import desc_safe, month_safe, date_safe, slip_safe
 
 # 5-4: 交際費への疑いキーワード
 KW_ENTERTAINMENT = [
@@ -186,11 +186,13 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
         dates_str = "、".join(str(r["date"].date()) for r in rows)
         descs     = list(dict.fromkeys(desc_safe(r) for r in rows if desc_safe(r)))
         desc_part = "　摘要: " + "、".join(f"「{d[:20]}」" for d in descs[:4]) if descs else ""
+        slips     = list(dict.fromkeys(slip_safe(r) for r in rows if slip_safe(r)))
 
         issues.append({
             "level": "warning", "category": "5-2 重複仕訳",
             "check_id": "5-2", "account": account,
             "month": str(rows[0]["date"].to_period("M")),
+            "slip": "、".join(slips[:6]),
             "message": (
                 f"【5-2・高】重複仕訳の可能性があります: "
                 f"同額（{amount:,.0f}円）・同科目（{account}）の仕訳が "
@@ -380,7 +382,7 @@ def _check_5_4_entertainment(df: pd.DataFrame) -> List[Dict[str, Any]]:
             issues.append({
                 "level": "warning", "category": "5-4 交際費境界",
                 "check_id": "5-4", "account": acct,
-                "month": date_safe(row),
+                "month": date_safe(row), "slip": slip_safe(row),
                 "message": (
                     f"【5-4・中】{acct} の摘要「{desc_safe(row)}」に"
                     "贈答・ゴルフ等のキーワードが含まれています。"
@@ -434,7 +436,7 @@ def _check_5_5_withholding(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "5-5 源泉徴収漏れ",
             "check_id": "5-5", "account": str(row["debit_account"]),
-            "month": month_safe(row),
+            "month": month_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【5-5・高】{row['debit_account']} {row['debit_amount']:,.0f}円"
                 + (f"（摘要: 「{desc_safe(row)}」）" if desc_safe(row) else "")

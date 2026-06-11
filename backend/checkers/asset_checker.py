@@ -1,4 +1,4 @@
-"""
+﻿"""
 カテゴリ3: 資産・修繕費の判定チェック
 3-1: 中小企業特例（少額資産）の適用漏れ（10万〜30万）
 3-2: 10万円未満の資産計上（費用化漏れ）
@@ -6,7 +6,7 @@
 """
 import pandas as pd
 from typing import List, Dict, Any
-from checkers.check_utils import desc_safe, month_safe, date_safe
+from checkers.check_utils import desc_safe, month_safe, date_safe, slip_safe
 
 # 固定資産科目
 FIXED_ASSET_ACCOUNTS = [
@@ -66,7 +66,7 @@ def _check_3_1_sme_deduction(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 issues.append({
                     "level": "warning", "category": "3-1 少額資産特例",
                     "check_id": "3-1", "account": str(sample["debit_account"]),
-                    "month": str(period),
+                    "month": str(period), "slip": str(slip),
                     "message": (
                         f"【3-1・中】伝票No.{slip}の固定資産計上額が {total:,.0f}円（10万〜30万）です。"
                         "中小企業の少額減価償却資産の特例（年間300万円まで即時損金算入）の"
@@ -111,7 +111,7 @@ def _check_3_2_under_threshold(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "3-2 少額資産費用化",
             "check_id": "3-2", "account": str(row["debit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【3-2・高】固定資産科目「{row['debit_account']}」に"
                 f"{row['debit_amount']:,.0f}円（10万円未満）の計上があります{desc_part}。"
@@ -148,7 +148,7 @@ def _check_3_3_repair_capitalization(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 issues.append({
                     "level": "warning", "category": "3-3 修繕費資本的支出",
                     "check_id": "3-3", "account": "修繕費",
-                    "month": str(period),
+                    "month": str(period), "slip": str(slip),
                     "message": (
                         f"【3-3・高】伝票No.{slip}の修繕費合計が {total:,.0f}円 に達しています。"
                         "20万円以上の修繕工事は、現状回復目的か価値向上目的かを確認し、"

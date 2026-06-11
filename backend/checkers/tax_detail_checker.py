@@ -1,4 +1,4 @@
-"""
+﻿"""
 カテゴリ2: 消費税区分の正確性チェック（科目・摘要ミスマッチ検知）
 2-1: 軽減税率の適用誤り
 2-2: 売上債権の譲渡手数料の非課税漏れ
@@ -9,7 +9,7 @@
 """
 import pandas as pd
 from typing import List, Dict, Any
-from checkers.check_utils import desc_safe, month_safe, date_safe, is_store_address
+from checkers.check_utils import desc_safe, month_safe, date_safe, is_store_address, slip_safe
 
 # ─── キーワードマスタ ───
 # ※一文字の「茶」は地名（天下茶屋・茶屋町等）に誤反応するため使用しない
@@ -116,7 +116,7 @@ def _check_2_1_reduced_rate(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "warning", "category": "2-1 軽減税率",
             "check_id": "2-1", "account": str(row["debit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-1・中】摘要「{desc_safe(row)}」は飲食料品の可能性がありますが、"
                 f"税区分が「{row[col]}」（10%）になっています。軽減税率8%を確認してください。"
@@ -141,7 +141,7 @@ def _check_2_2_card_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-2 決済手数料非課税",
             "check_id": "2-2", "account": "支払手数料",
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-2・高】摘要「{desc_safe(row)}」はクレジットカード・EC決済手数料と"
                 "思われますが、税区分が課税（10%）になっています。"
@@ -184,7 +184,7 @@ def _check_2_3_govt_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-3 行政手数料",
             "check_id": "2-3", "account": str(row["debit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-3・高】摘要「{d}」は印紙・行政手数料と"
                 "思われますが、税区分が課税（10%）になっています。"
@@ -213,7 +213,7 @@ def _check_2_4_membership_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "warning", "category": "2-4 諸会費課税漏れ",
             "check_id": "2-4", "account": "諸会費",
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-4・中】諸会費の摘要「{desc_safe(row)}」にクレジットカード年会費の"
                 "キーワードが含まれていますが、税区分が不課税/対象外になっています。"
@@ -244,7 +244,7 @@ def _check_2_5_overseas_vendor(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-5 海外ベンダー",
             "check_id": "2-5", "account": str(row["debit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-5・高】摘要「{desc_safe(row)}」は海外ベンダーへの支払と"
                 "思われますが、税区分が課税（10%）になっています。"
@@ -283,7 +283,7 @@ def _check_2_6_overseas_travel(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-6 海外渡航費",
             "check_id": "2-6", "account": str(row["debit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-6・高】摘要「{desc_safe(row)}」は海外渡航・国際線関連と"
                 "思われますが、税区分が課税（10%）になっています。"
@@ -325,7 +325,7 @@ def _check_2_7_service_award(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-7 手当・表彰金",
             "check_id": "2-7", "account": str(row["debit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-7・高】摘要「{desc_safe(row)}」は精勤手当・永年勤続表彰などと"
                 "思われますが、税区分が課税（10%）になっています。"
@@ -365,7 +365,7 @@ def _check_2_8_newspaper(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "warning", "category": "2-8 新聞軽減税率",
             "check_id": "2-8", "account": str(row["debit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-8・中】摘要「{desc_safe(row)}」は紙の新聞代と思われますが、"
                 "税区分が課税（10%）になっています。"
@@ -441,7 +441,7 @@ def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
             issues.append({
                 "level": "error", "category": "2-9 振込手数料返還",
                 "check_id": "2-9", "account": str(row["debit_account"]),
-                "month": date_safe(row),
+                "month": date_safe(row), "slip": slip_safe(row),
                 "message": (
                     f"【2-9・高】{row['debit_account']} {row['debit_amount']:,.0f}円"
                     + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
@@ -467,7 +467,7 @@ def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-9 振込手数料返還",
             "check_id": "2-9", "account": str(row["debit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-9・高】{row['debit_account']} {row['debit_amount']:,.0f}円"
                 + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
@@ -504,7 +504,7 @@ def _check_2_10_residential_rent(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "warning", "category": "2-10 受取家賃",
             "check_id": "2-10", "account": str(row["credit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-10・中】受取家賃 {row['credit_amount']:,.0f}円"
                 + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
@@ -537,7 +537,7 @@ def _check_2_11_cashback(df: pd.DataFrame) -> List[Dict[str, Any]]:
         issues.append({
             "level": "error", "category": "2-11 キャッシュバック",
             "check_id": "2-11", "account": str(row["credit_account"]),
-            "month": date_safe(row),
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【2-11・高】摘要「{desc_safe(row)}」{row['credit_amount']:,.0f}円 の"
                 f"税区分が課税売上（{row[col]}）になっています。"

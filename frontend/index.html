@@ -990,6 +990,7 @@
             <span class="bdg b-cat">${i.category}</span>
             <span class="bdg b-acc">${i.account}</span>
             <span class="bdg b-mon">${i.month}</span>
+            ${i.slip ? `<span class="bdg b-mon">伝票No. ${i.slip}</span>` : ''}
           </div>
           <div class="ic-msg">${i.message}</div>
         </div>

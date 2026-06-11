@@ -1,4 +1,4 @@
-"""
+﻿"""
 消費税区分チェックモジュール
 インボイス制度対応含む
 """
@@ -160,12 +160,12 @@ def _check_overseas_travel(df: pd.DataFrame) -> List[Dict[str, Any]]:
     ]
 
     for _, row in targets.iterrows():
-        from checkers.check_utils import desc_safe, month_safe
+        from checkers.check_utils import desc_safe, month_safe, slip_safe
         issues.append({
             "level": "warning",
             "category": "消費税",
             "account": str(row["debit_account"]),
-            "month": month_safe(row),
+            "month": month_safe(row), "slip": slip_safe(row),
             "message": (
                 f"【要確認】摘要「{desc_safe(row)}」は海外出張関連と思われますが、"
                 f"税区分が課税（{row['debit_tax']}）になっています。"

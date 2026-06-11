@@ -1,4 +1,4 @@
-"""
+﻿"""
 カテゴリ4: 債権・債務の消込・滞留チェック
 4-1: 振込手数料差引による売掛金消込漏れ
 4-2: 仮払金・立替金の長期滞留・精算漏れ
@@ -149,7 +149,7 @@ def _check_4_2_suspense_aging(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     "category": f"4-2 {account}滞留",
                     "check_id": "4-2",
                     "account": label,
-                    "month": date_safe(row),
+                    "month": date_safe(row), "slip": slip_safe(row),
                     "message": (
                         f"【4-2・高】{label} に {row['date'].date()} 発生の"
                         f" {amt:,.0f}円 が{days_elapsed}日経過しても未精算です{desc_part}。"
