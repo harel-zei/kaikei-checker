@@ -93,6 +93,8 @@ def check_tax_detail(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues.extend(_check_2_7_service_award(df))
     issues.extend(_check_2_8_newspaper(df))
     issues.extend(_check_2_9_wire_fee_return(df))
+    issues.extend(_check_2_10_residential_rent(df))
+    issues.extend(_check_2_11_cashback(df))
     return issues
 
 
@@ -398,8 +400,6 @@ def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
         df[col].astype(str).apply(_has_tax_10)
     )
     fee_entries = df[fee_mask].copy()
-    if fee_entries.empty:
-        return issues
 
     # 摘要から「売上金回収」「売上振込」などのキーワードで絞り込む
     # （退職金支払・前渡金支払など売掛金回収と無関係なものを除外）
@@ -451,4 +451,98 @@ def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     "1万円未満の売上返還はインボイスの交付義務が免除されます。"
                 ),
             })
+
+    # ── 直接相殺パターン: (支払手数料)××（売掛金）×× ──
+    # 同一行で借方が手数料・貸方が売掛金の仕訳は、金額にかかわらず
+    # 売掛金回収時の振込料相殺であり「売返」とすべき
+    offset_mask = (
+        df["debit_account"].fillna("").astype(str).str.contains("通信費|支払手数料", na=False) &
+        df["credit_account"].fillna("").astype(str).str.contains("売掛金", na=False) &
+        df[col].astype(str).apply(_has_tax_10)
+    )
+    flagged_idx = set(fee_entries.index)
+    for idx, row in df[offset_mask].iterrows():
+        if idx in flagged_idx:
+            continue  # 上のチェックで指摘済み
+        issues.append({
+            "level": "error", "category": "2-9 振込手数料返還",
+            "check_id": "2-9", "account": str(row["debit_account"]),
+            "month": date_safe(row),
+            "message": (
+                f"【2-9・高】{row['debit_account']} {row['debit_amount']:,.0f}円"
+                + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
+                + "は売掛金との相殺仕訳（振込料の差引）と思われます。"
+                "税区分を「課税仕入（10%）」から"
+                "「売上対価の返還等（売返・10%）」に変更してください。"
+            ),
+        })
+    return issues
+
+
+def _check_2_10_residential_rent(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    2-10: 受取家賃が課税売上になっている。
+    居住用の家賃収入は消費税の非課税取引。事業用（店舗・事務所等）は課税で正しいため、
+    確認を促すレベルで指摘する。
+    """
+    issues = []
+    col = "credit_tax" if "credit_tax" in df.columns else None
+    if not col:
+        return issues
+
+    targets = df[
+        (
+            df["credit_account"].fillna("").astype(str).str.contains("受取家賃|家賃収入", na=False) |
+            (
+                df["credit_account"].fillna("").astype(str).str.contains("雑収入", na=False) &
+                df["description"].fillna("").astype(str).str.contains("家賃", na=False)
+            )
+        ) &
+        df[col].astype(str).apply(_has_tax_10)
+    ]
+    for _, row in targets.iterrows():
+        issues.append({
+            "level": "warning", "category": "2-10 受取家賃",
+            "check_id": "2-10", "account": str(row["credit_account"]),
+            "month": date_safe(row),
+            "message": (
+                f"【2-10・中】受取家賃 {row['credit_amount']:,.0f}円"
+                + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
+                + f"の税区分が課税（{row[col]}）になっています。"
+                "居住用の家賃収入は非課税取引です。"
+                "事業用（店舗・事務所・駐車場等）であれば課税のままで問題ありません。"
+            ),
+        })
+    return issues
+
+
+def _check_2_11_cashback(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    2-11: キャッシュバック・ポイント還元等の収入が課税売上になっている。
+    キャッシュバックは対価性のない収入のため消費税の課税対象外（不課税）。
+    """
+    issues = []
+    col = "credit_tax" if "credit_tax" in df.columns else None
+    if not col:
+        return issues
+
+    KW_CASHBACK = ["キャッシュバック", "ｷｬｯｼｭﾊﾞｯｸ", "ポイント還元", "ポイント付与", "還元金"]
+
+    targets = df[
+        df["description"].fillna("").astype(str).apply(lambda x: any(k in x for k in KW_CASHBACK)) &
+        (df["credit_amount"] > 0) &
+        df[col].astype(str).apply(_has_tax_10)
+    ]
+    for _, row in targets.iterrows():
+        issues.append({
+            "level": "error", "category": "2-11 キャッシュバック",
+            "check_id": "2-11", "account": str(row["credit_account"]),
+            "month": date_safe(row),
+            "message": (
+                f"【2-11・高】摘要「{desc_safe(row)}」{row['credit_amount']:,.0f}円 の"
+                f"税区分が課税売上（{row[col]}）になっています。"
+                "キャッシュバック・ポイント還元は対価性のない収入のため"
+                "課税対象外（不課税）です。税区分を修正してください。"
+            ),
+        })
     return issues
