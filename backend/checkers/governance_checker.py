@@ -81,17 +81,33 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # ──────────────────────────────────────────────────────────
 # 5-2: 重複仕訳の検知
 # ──────────────────────────────────────────────────────────
+# 5-2: 日常的に同額が多発する科目・摘要は重複チェック対象外
+DUP_EXCLUDE_ACCOUNTS = ["支払手数料", "支払利息", "雑費"]
+DUP_EXCLUDE_KEYWORDS = ["振込手数料", "手数料", "利息", "振込料"]
+DUP_MIN_AMOUNT = 5_000  # 少額（定型手数料等）は重複チェックしない
+
+
 def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     金額・借方科目が同じで、日付が7日以内、摘要が類似している仕訳を検知。
     N件の重複がある場合、ペアをそれぞれ表示するのではなく
     グループ化して1件の指摘にまとめる。
+    振込手数料・利息など同額が正常に多発する取引は除外する。
     """
     issues = []
     if df.empty:
         return issues
 
-    work = df[df["debit_amount"] > 0].copy().reset_index(drop=True)
+    work = df[df["debit_amount"] >= DUP_MIN_AMOUNT].copy()
+    # 手数料・利息系の科目を除外
+    work = work[~work["debit_account"].fillna("").astype(str).apply(
+        lambda x: any(a in x for a in DUP_EXCLUDE_ACCOUNTS)
+    )]
+    # 摘要が手数料・利息系のものを除外
+    work = work[~work["description"].fillna("").astype(str).apply(
+        lambda x: any(k in x for k in DUP_EXCLUDE_KEYWORDS)
+    )]
+    work = work.reset_index(drop=True)
     if len(work) < 2:
         return issues
 

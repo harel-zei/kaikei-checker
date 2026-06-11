@@ -93,10 +93,11 @@ def _check_cash_balance(df: pd.DataFrame, ob: dict) -> List[Dict[str, Any]]:
         for (acc, sub) in targets:
             label   = f"{acc}（{sub}）" if sub else acc
             # 補助科目がある場合は専用残高のみ使用（合計値を誤適用しない）
+            # _ob_get_fuzzy で括弧・スペースの表記ゆれにも対応
             if sub:
-                opening = ob.get(label)          # 例: 普通預金（永和信用金庫・梅田）
+                opening = _ob_get_fuzzy(ob, label)  # 例: 普通預金（永和信用金庫・梅田）
             else:
-                opening = ob.get(acc)            # 補助科目なしの場合のみ科目合計を使用
+                opening = _ob_get_fuzzy(ob, acc)    # 補助科目なしの場合のみ科目合計を使用
 
             if opening is None:
                 skipped.append(label)
@@ -459,14 +460,22 @@ def _detect_stale_by_activity(
     return flagged
 
 
+def _norm_key(s: str) -> str:
+    """照合用にキーを正規化する（全角/半角スペース除去・株式会社記号統一）"""
+    return (str(s)
+            .replace("　", "").replace(" ", "")
+            .replace("（株）", "㈱").replace("(株)", "㈱"))
+
+
 def _ob_get_fuzzy(ob: dict, label: str):
     """
     期首残高辞書から label を検索する。
-    括弧の不一致（弥生の試算表で入れ子括弧の末尾が省略されるケース）に対応するため、
-    以下の順に検索する:
+    括弧の不一致（弥生の試算表で入れ子括弧の末尾が省略されるケース）や
+    スペースの全角/半角ゆれに対応するため、以下の順に検索する:
       1. 完全一致
       2. 末尾の「）」を1つ除いたキー  例: A（B（C））→ A（B（C）
       3. 末尾の「）」を追加したキー   例: A（B（C） → A（B（C））
+      4. スペース・株式会社記号を正規化した上での一致
     """
     # 1. 完全一致
     if label in ob:
@@ -480,6 +489,11 @@ def _ob_get_fuzzy(ob: dict, label: str):
     alt2 = label + "）"
     if alt2 in ob:
         return ob[alt2]
+    # 4. 正規化一致（スペース・記号ゆれ）
+    norm = _norm_key(label)
+    for k, v in ob.items():
+        if _norm_key(k) == norm:
+            return v
     return None
 
 

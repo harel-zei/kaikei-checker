@@ -347,9 +347,18 @@ async def _run_checks(
         _parse_balance_file(c["balance_main_prior"], use_ending=True) if c.get("balance_main_prior") else {},
         _parse_balance_file(c["balance_sub_prior"],  use_ending=True) if c.get("balance_sub_prior")  else {},
     )
-    # 当期首ファイルを優先、なければ前期末から導出
-    ob = ob_from_current if ob_from_current else ob_from_prior
-    ob_source = "当期首ファイル" if ob_from_current else ("前期末から自動導出" if ob_from_prior else "なし")
+    # 前期末由来とアップロード分をマージ（同一科目は当期首ファイルを優先）
+    # どちらか一方のみだと、当期ファイルに含まれない科目の期首残高が
+    # 保存済み前期データにあっても使われない問題が起きるためマージする
+    ob = _merge_balances(ob_from_prior, ob_from_current)
+    if ob_from_current and ob_from_prior:
+        ob_source = "当期首ファイル＋前期末から補完"
+    elif ob_from_current:
+        ob_source = "当期首ファイル"
+    elif ob_from_prior:
+        ob_source = "前期末から自動導出"
+    else:
+        ob_source = "なし"
 
     # 前期仕訳帳
     prior_df = None
