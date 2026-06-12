@@ -57,11 +57,11 @@ KW_OVERSEAS_REGISTERED = [
     "Google", "グーグル", "AWS", "Amazon", "アマゾン", "Meta", "Facebook",
     "Microsoft", "マイクロソフト", "ZOOM", "Zoom", "Adobe", "アドビ",
     "Dropbox", "Netflix", "Spotify", "Apple", "アップル", "Salesforce",
-    "Slack",
+    "Slack", "OpenAI", "ChatGPT",
 ]
 # 登録状況が不明・未登録の可能性がある海外ベンダー（登録確認を促す）
 KW_OVERSEAS_UNCERTAIN = [
-    "GitHub", "ChatGPT", "OpenAI", "Anthropic", "Claude", "HubSpot",
+    "GitHub", "Anthropic", "Claude", "HubSpot",
     "Shopify", "Canva", "Notion", "Figma", "Midjourney", "Discord",
     "Wix", "Squarespace", "Mailchimp", "Zapier", "Stripe",
 ]
