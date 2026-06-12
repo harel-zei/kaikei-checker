@@ -41,7 +41,8 @@ def check_tax(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     issues.extend(_check_non_taxable_accounts(df))
     issues.extend(_check_invoice_system(df))
-    issues.extend(_check_overseas_travel(df))
+    # 海外出張チェックは tax_detail_checker の 2-6（海外渡航費）に一本化
+    # （両方で実行すると同じ仕訳が二重に指摘されるため）
 
     return issues
 

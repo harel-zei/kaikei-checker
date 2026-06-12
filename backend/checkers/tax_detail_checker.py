@@ -66,8 +66,8 @@ KW_OVERSEAS_UNCERTAIN = [
     "Wix", "Squarespace", "Mailchimp", "Zapier", "Stripe",
 ]
 KW_OVERSEAS_TRAVEL = [
-    "海外出張", "渡航", "航空券", "国際線", "海外ホテル", "海外現地",
-    "USD", "EUR", "GBP", "CNY", "外貨", "免税店",
+    "海外出張", "渡航", "航空券", "国際線", "海外ホテル", "海外現地", "海外",
+    "USD", "EUR", "GBP", "CNY", "HKD", "SGD", "AUD", "外貨", "免税店",
 ]
 
 TAX_10 = ["課税", "10%", "課税売上", "課税仕入"]
