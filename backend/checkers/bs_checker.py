@@ -62,7 +62,8 @@ def check_bs(
     issues.extend(_check_receivables_by_sub(df, ob, pabl, "credit", last_month))
     issues.extend(_check_tax_temp_accounts(df))
     issues.extend(_check_suspense_payments(df))
-    issues.extend(_check_loan_repayment(df))
+    # 借入金の返済予定表との照合は日常の定型作業であり、残高があるだけで
+    # 一律に指摘するとノイズになるため通知しない（_check_loan_repayment は無効化）
     return issues
 
 
@@ -192,20 +193,10 @@ def _check_receivables_by_sub(
 
             issues.extend(check_issues)
 
-            # 期首残高未提供の補助科目を科目単位で1件にまとめて出力
-            if missing_subs:
-                sample_subs = missing_subs[:5]
-                suffix = f"（他{len(missing_subs)-5}件）" if len(missing_subs) > 5 else ""
-                issues.append({
-                    "level": "info", "category": "BS", "account": actual_acc,
-                    "month": "全期間",
-                    "message": (
-                        f"【期首残高未提供】{actual_acc} の補助科目 {len(missing_subs)}件 について"
-                        "期首残高が提供されていないため0円として計算しています。"
-                        f"（{', '.join(sample_subs)}{suffix}）"
-                    "正確なチェックには期首補助残高CSVまたは補助元帳ファイルをアップロードしてください。"
-                ),
-            })
+            # 期首残高未提供の補助科目について:
+            # 当期に新規取引が発生した補助科目は期首0円が正常であり、
+            # 未提供を一律に指摘するとノイズになるため通知しない。
+            # （マイナス残高など実際の異常は _check_single_account 側で検知される）
 
     return issues
 

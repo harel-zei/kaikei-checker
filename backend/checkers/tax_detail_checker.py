@@ -446,57 +446,57 @@ def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
         fee_entries["description"].astype(str).apply(_is_ar_wire_fee)
     ]
 
-    for _, row in fee_entries.iterrows():
-        # 確認: 同一伝票に売掛金の貸方がある
+    # 該当行のインデックスを集める（件数が多くなるため最後に1件へ集約）
+    hit_idx = set()
+    for idx, row in fee_entries.iterrows():
         has_ar = False
         if "slip_no" in df.columns:
             slip = str(row.get("slip_no", ""))
             same_slip = df[df["slip_no"].astype(str) == slip]
             has_ar = same_slip["credit_account"].astype(str).str.contains("売掛金", na=False).any()
         if not has_ar:
-            # 同日に売掛金貸方があるか
             ar_credit_dates = set(df[df["credit_account"].astype(str).str.contains("売掛金", na=False)]["date"].dropna())
             has_ar = pd.notna(row["date"]) and row["date"] in ar_credit_dates
-
         if has_ar:
-            issues.append({
-                "level": "error", "category": "2-9 振込手数料返還",
-                "check_id": "2-9", "account": str(row["debit_account"]),
-                "month": date_safe(row), "slip": slip_safe(row),
-                "message": (
-                    f"【2-9・高】{row['debit_account']} {row['debit_amount']:,.0f}円"
-                    + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
-                    + "は売掛金回収時に差し引かれた振込手数料と思われます。"
-                    "税区分を「課税仕入（10%）」から"
-                    "「売上対価の返還等（売返・10%）」に変更してください。"
-                    "1万円未満の売上返還はインボイスの交付義務が免除されます。"
-                ),
-            })
+            hit_idx.add(idx)
 
     # ── 直接相殺パターン: (支払手数料)××（売掛金）×× ──
-    # 同一行で借方が手数料・貸方が売掛金の仕訳は、金額にかかわらず
-    # 売掛金回収時の振込料相殺であり「売返」とすべき
+    # 同一行で借方が手数料・貸方が売掛金の仕訳は、金額にかかわらず売返とすべき
     offset_mask = (
         df["debit_account"].fillna("").astype(str).str.contains("通信費|支払手数料", na=False) &
         df["credit_account"].fillna("").astype(str).str.contains("売掛金", na=False) &
         df[col].astype(str).apply(_has_tax_10)
     )
-    flagged_idx = set(fee_entries.index)
-    for idx, row in df[offset_mask].iterrows():
-        if idx in flagged_idx:
-            continue  # 上のチェックで指摘済み
-        issues.append({
-            "level": "error", "category": "2-9 振込手数料返還",
-            "check_id": "2-9", "account": str(row["debit_account"]),
-            "month": date_safe(row), "slip": slip_safe(row),
-            "message": (
-                f"【2-9・高】{row['debit_account']} {row['debit_amount']:,.0f}円"
-                + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
-                + "は売掛金との相殺仕訳（振込料の差引）と思われます。"
-                "税区分を「課税仕入（10%）」から"
-                "「売上対価の返還等（売返・10%）」に変更してください。"
-            ),
-        })
+    hit_idx |= set(df[offset_mask].index)
+
+    if not hit_idx:
+        return issues
+
+    hits = df.loc[sorted(hit_idx)]
+    total = hits["debit_amount"].sum()
+    cnt = len(hits)
+
+    def _line(row):
+        d = row["date"]
+        ds = f"{d.year}/{d.month}/{d.day}" if pd.notna(d) else "日付不明"
+        slip = f" 伝票No.{slip_safe(row)}" if slip_safe(row) else ""
+        return f"{ds}{slip} {row['debit_amount']:,.0f}円"
+
+    lines = "、".join(_line(r) for _, r in hits.head(20).iterrows())
+    suffix = f" 他{cnt-20}件" if cnt > 20 else ""
+
+    issues.append({
+        "level": "error", "category": "2-9 振込手数料返還",
+        "check_id": "2-9", "account": "支払手数料",
+        "month": "全期間",
+        "message": (
+            f"【2-9・高】売掛金回収時に差し引かれた振込手数料と思われる仕訳が "
+            f"{cnt}件（合計 {total:,.0f}円）あります。"
+            "税区分を「課税仕入（10%）」から「売上対価の返還等（売返・10%）」に"
+            "変更してください（1万円未満の売上返還はインボイス交付義務が免除）。"
+            f"対象: {lines}{suffix}"
+        ),
+    })
     return issues
 
 

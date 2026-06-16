@@ -87,8 +87,9 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # 5-2: 重複仕訳の検知
 # ──────────────────────────────────────────────────────────
 # 5-2: 日常的に同額が多発する科目・摘要は重複チェック対象外
-DUP_EXCLUDE_ACCOUNTS = ["支払手数料", "支払利息", "雑費"]
-DUP_EXCLUDE_KEYWORDS = ["振込手数料", "手数料", "利息", "振込料"]
+# リース料・賃借料は同額の契約を複数持つことが普通のため除外
+DUP_EXCLUDE_ACCOUNTS = ["支払手数料", "支払利息", "雑費", "リース料", "賃借料", "地代家賃"]
+DUP_EXCLUDE_KEYWORDS = ["振込手数料", "手数料", "利息", "振込料", "リース", "メンテナンス"]
 
 
 def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:

@@ -28,7 +28,7 @@ def check_pl(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     issues.extend(_check_gross_profit_ratio(df))
     # 定例費用の計上漏れは completeness_checker の 1-1 に一本化（重複指摘を防ぐ）
-    issues.extend(_check_repair_expenses(df))
+    # 修繕費の資産計上チェックは asset_checker の 3-3 に一本化（重複指摘を防ぐ）
     issues.extend(_check_misc_expenses(df))
     issues.extend(_check_month_over_month(df))
 

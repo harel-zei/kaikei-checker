@@ -125,7 +125,8 @@ def _check_3_2_under_threshold(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # 3-3: 修繕費の資産計上漏れ（20万円以上）
 # ──────────────────────────────────────────────────────────
 def _check_3_3_repair_capitalization(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """修繕費に20万円以上の計上→資本的支出として固定資産計上の可能性"""
+    """修繕費に20万円以上の計上→資本的支出として固定資産計上の可能性。
+    件数が多くなりやすいため、20万円以上を1件にまとめて指摘する。"""
     issues = []
     acc_mask = df["debit_account"].fillna("").astype(str).apply(
         lambda x: isinstance(x, str) and x not in ("nan", "None", "") and any(a in x for a in REPAIR_ACCOUNTS)
@@ -134,43 +135,45 @@ def _check_3_3_repair_capitalization(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if repair_entries.empty:
         return issues
 
-    # 単行 + 同一伝票合算の両方で判定
-    checked_slips = set()
+    # 伝票単位で合算（伝票が無ければ行単位）
+    if "slip_no" in df.columns and repair_entries["slip_no"].notna().any():
+        grouped = repair_entries.groupby("slip_no").agg(
+            total=("debit_amount", "sum"),
+            date=("date", "first"),
+        )
+        targets = [
+            {"slip": str(slip), "amount": r["total"], "date": r["date"]}
+            for slip, r in grouped.iterrows() if r["total"] >= THRESHOLD_REPAIR
+        ]
+    else:
+        targets = [
+            {"slip": "", "amount": row["debit_amount"], "date": row["date"]}
+            for _, row in repair_entries.iterrows() if row["debit_amount"] >= THRESHOLD_REPAIR
+        ]
 
-    if "slip_no" in df.columns:
-        slip_totals = repair_entries.groupby(
-            [repair_entries["date"].dt.to_period("M"), "slip_no"]
-        )["debit_amount"].sum()
-        for (period, slip), total in slip_totals.items():
-            if total >= THRESHOLD_REPAIR:
-                checked_slips.add(str(slip))
-                sample = repair_entries[repair_entries["slip_no"] == str(slip)].iloc[0]
-                issues.append({
-                    "level": "warning", "category": "3-3 修繕費資本的支出",
-                    "check_id": "3-3", "account": "修繕費",
-                    "month": str(period), "slip": str(slip),
-                    "message": (
-                        f"【3-3・高】伝票No.{slip}の修繕費合計が {total:,.0f}円 に達しています。"
-                        "20万円以上の修繕工事は、現状回復目的か価値向上目的かを確認し、"
-                        "資本的支出に該当する場合は固定資産として計上が必要です。"
-                        + (f"（摘要: {desc_safe(sample)}）" if desc_safe(sample) else "")
-                    ),
-                })
+    if not targets:
+        return issues
 
-    # 伝票番号のない行の単行チェック
-    single = repair_entries[
-        (repair_entries["debit_amount"] >= THRESHOLD_REPAIR) &
-        ~repair_entries.get("slip_no", pd.Series(dtype=str)).isin(checked_slips)
-    ]
-    for _, row in single.iterrows():
-        issues.append({
-            "level": "warning", "category": "3-3 修繕費資本的支出",
-            "check_id": "3-3", "account": "修繕費",
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
-            "message": (
-                f"【3-3・高】修繕費に {row['debit_amount']:,.0f}円 の計上があります。"
-                "20万円以上の修繕は資本的支出として固定資産計上が必要な場合があります。"
-                + (f"（摘要: {desc_safe(row)}）" if desc_safe(row) else "")
-            ),
-        })
+    targets.sort(key=lambda t: t["amount"], reverse=True)
+    total_amt = sum(t["amount"] for t in targets)
+
+    def _line(t):
+        d = t["date"]
+        ds = f"{d.year}/{d.month}/{d.day}" if pd.notna(d) else "日付不明"
+        slip = f" 伝票No.{t['slip']}" if t["slip"] else ""
+        return f"{ds}{slip} {t['amount']:,.0f}円"
+
+    lines = "、".join(_line(t) for t in targets[:20])
+    suffix = f" 他{len(targets)-20}件" if len(targets) > 20 else ""
+
+    issues.append({
+        "level": "warning", "category": "3-3 修繕費資本的支出",
+        "check_id": "3-3", "account": "修繕費",
+        "month": "全期間",
+        "message": (
+            f"【3-3・高】20万円以上の修繕費が {len(targets)}件（合計 {total_amt:,.0f}円）あります。"
+            "資本的支出（価値向上・耐用年数延長）に該当するものは固定資産計上が必要です。"
+            f"対象: {lines}{suffix}"
+        ),
+    })
     return issues
