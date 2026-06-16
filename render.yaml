@@ -11,7 +11,12 @@ services:
         value: admin           # ← ログインユーザー名（後で変更可）
       - key: APP_PASSWORD
         generateValue: true    # ← Renderが自動でパスワードを生成
-    disk:
-      name: client-data
-      mountPath: /opt/render/project/src/backend/client_data
-      sizeGB: 1                # クライアントデータ保存用ディスク（1GB）
+      # ── Supabase ストレージ（前期データの永続保存）──
+      - key: SUPABASE_URL
+        value: https://uwrespfqnbamwpuvrtwc.supabase.co
+      - key: SUPABASE_BUCKET
+        value: kaikei-client-data
+      - key: SUPABASE_SECRET_KEY
+        sync: false            # ← 機密キー。Renderダッシュボードで値を設定（gitには出さない）
+    # 注: 無料プランは永続ディスク非対応のため disk 設定は廃止。
+    #     クライアントデータは Supabase ストレージに保存する。
