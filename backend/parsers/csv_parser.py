@@ -205,6 +205,34 @@ def _to_num(val) -> float:
         return 0.0
 
 
+# 和暦の元号と西暦開始年（元年=開始年）
+_JP_ERA = {
+    "令和": 2019, "令": 2019, "R": 2019,
+    "平成": 1989, "平": 1989, "H": 1989,
+    "昭和": 1926, "昭": 1926, "S": 1926,
+    "大正": 1912, "大": 1912, "T": 1912,
+}
+_JP_DATE_RE = re.compile(
+    r"(令和|平成|昭和|大正|令|平|昭|大|[RHST])\s*(\d{1,2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日"
+)
+
+
+def _convert_jp_era(val):
+    """和暦表記（令和07年05月01日 等）を西暦の 'YYYY-MM-DD' に変換。
+    和暦でなければ元の値をそのまま返す。"""
+    if not isinstance(val, str):
+        return val
+    m = _JP_DATE_RE.search(val)
+    if not m:
+        return val
+    era, yy, mm, dd = m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4))
+    base = _JP_ERA.get(era)
+    if base is None:
+        return val
+    year = base + (yy - 1)  # 元号N年 = 開始年 + (N-1)
+    return f"{year:04d}-{mm:02d}-{dd:02d}"
+
+
 def _normalize(df: pd.DataFrame) -> pd.DataFrame:
     for col in ["date", "debit_account", "debit_amount", "credit_account", "credit_amount"]:
         if col not in df.columns:
@@ -214,6 +242,8 @@ def _normalize(df: pd.DataFrame) -> pd.DataFrame:
             df[col].astype(str).str.replace(",", "").str.strip(),
             errors="coerce"
         ).fillna(0)
+    # 和暦（令和・平成等）を西暦に変換してから日付解析
+    df["date"] = df["date"].apply(_convert_jp_era)
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     return df.reset_index(drop=True)
 

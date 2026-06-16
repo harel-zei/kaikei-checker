@@ -137,10 +137,14 @@ def _check_monthly_fixed_expenses(df: pd.DataFrame) -> List[Dict[str, Any]]:
         if entries.empty:
             continue
 
+        valid_dates = df["date"].dropna()
+        if valid_dates.empty:
+            continue
+
         monthly = entries.groupby(df["date"].dt.to_period("M"))["debit_amount"].sum()
         all_months = pd.period_range(
-            start=df["date"].dropna().min().to_period("M"),
-            end=df["date"].dropna().max().to_period("M"),
+            start=valid_dates.min().to_period("M"),
+            end=valid_dates.max().to_period("M"),
             freq="M"
         )
 

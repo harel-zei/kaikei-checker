@@ -116,9 +116,13 @@ def _check_1_2_month_end_timing(df: pd.DataFrame) -> List[Dict[str, Any]]:
         if entries.empty:
             continue
 
+        valid_dates = entries["date"].dropna()
+        if valid_dates.empty:
+            continue
+
         all_periods = pd.period_range(
-            start=entries["date"].dropna().min().to_period("M"),
-            end=entries["date"].dropna().max().to_period("M"),
+            start=valid_dates.min().to_period("M"),
+            end=valid_dates.max().to_period("M"),
             freq="M"
         )
 

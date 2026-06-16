@@ -71,8 +71,21 @@ def extract_period_date(content: str, file_type: str) -> Optional[pd.Timestamp]:
 def _latest_journal_date(content: str) -> Optional[pd.Timestamp]:
     """仕訳帳から最新の日付を抽出する"""
     dates = []
+    # 弥生ヘッダーの「処理日時」「集計期間」等は取引日ではないため除外する
+    scan = "\n".join(
+        ln for ln in content.splitlines()
+        if not any(h in ln for h in ("処理日時", "集計期間", "検索条件", "出力日"))
+    )
+    # 和暦形式: 令和07年05月01日（弥生・和暦書き出し）
+    _ERA = {"令和": 2018, "平成": 1988, "昭和": 1925}
+    for m in re.finditer(r'(令和|平成|昭和)(\d{1,2})年(\d{1,2})月(\d{1,2})日', scan):
+        try:
+            base = _ERA[m.group(1)]
+            dates.append(pd.Timestamp(base + int(m.group(2)), int(m.group(3)), int(m.group(4))))
+        except Exception:
+            pass
     # 弥生形式: R.07/12/01
-    for m in re.finditer(r'R\.(\d{2})/(\d{2})/(\d{2})', content):
+    for m in re.finditer(r'R\.(\d{2})/(\d{2})/(\d{2})', scan):
         try:
             ts = pd.Timestamp(
                 year=int(m.group(1)) + 2018,
@@ -83,13 +96,13 @@ def _latest_journal_date(content: str) -> Optional[pd.Timestamp]:
         except Exception:
             pass
     # 通常形式: YYYY/MM/DD（弥生ヘッダーあり）
-    for m in re.finditer(r'(\d{4})/(\d{2})/(\d{2})', content):
+    for m in re.finditer(r'(\d{4})/(\d{2})/(\d{2})', scan):
         try:
             dates.append(pd.Timestamp(int(m.group(1)), int(m.group(2)), int(m.group(3))))
         except Exception:
             pass
     # freee形式: YYYY-MM-DD（ハイフン区切り）
-    for m in re.finditer(r'(\d{4})-(\d{2})-(\d{2})', content[:50000]):  # 先頭50KB のみ走査
+    for m in re.finditer(r'(\d{4})-(\d{2})-(\d{2})', scan[:50000]):  # 先頭50KB のみ走査
         try:
             y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
             if 2000 <= y <= 2100 and 1 <= mo <= 12 and 1 <= d <= 31:
