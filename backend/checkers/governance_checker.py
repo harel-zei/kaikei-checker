@@ -24,7 +24,9 @@ KW_WITHHOLDING = [
     "著作", "イラスト", "写真家", "カメラマン", "コンサルタント",
 ]
 
-ENTERTAINMENT_UNIT_LIMIT = 10_000  # 1人あたり1万円超で交際費
+ENTERTAINMENT_UNIT_LIMIT = 10_000  # 1人あたり1万円（2024改正後の会議費基準）
+# 会議費は最低2名以上のため、2万円（1万円×2名）以下は指摘しない
+KAIGI_MIN_FLAG = 20_000
 DIGIT_ERROR_MULTIPLIER   = 5.0     # 平均の5倍以上/5分の1以下
 
 
@@ -62,19 +64,22 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
     base_amount = base_months.mean()
     check_months = monthly.iloc[3:]
 
-    for p, val in check_months.items():
-        if abs(val - base_amount) > 1:  # 1円以上の差
-            issues.append({
-                "level": "error", "category": "5-1 役員給与定期同額",
-                "check_id": "5-1", "account": "役員報酬",
-                "month": str(p),
-                "message": (
-                    f"【5-1・高】役員報酬が {p} に {val:,.0f}円 と、"
-                    f"期初3ヶ月の平均額（{base_amount:,.0f}円）から変動しています。"
-                    "定期同額給与は期首から3ヶ月以内の改定を除き、"
-                    "変動があると損金不算入となります。"
-                ),
-            })
+    # 変動した月をまとめて1件の指摘にする（月ごとに分けない）
+    changed = [(p, val) for p, val in check_months.items() if abs(val - base_amount) > 1]
+    if changed:
+        detail = "、".join(f"{p}：{val:,.0f}円" for p, val in changed[:12])
+        issues.append({
+            "level": "error", "category": "5-1 役員給与定期同額",
+            "check_id": "5-1", "account": "役員報酬",
+            "month": str(changed[0][0]),
+            "message": (
+                f"【5-1・高】役員報酬が期初3ヶ月の平均額（{base_amount:,.0f}円）から"
+                f"変動している月があります（{len(changed)}ヶ月）: {detail}。"
+                "定期同額給与は期首から3ヶ月以内の改定を除き、"
+                "変動があると損金不算入となる場合があります。"
+                "（期中改定が適正な手続きによるものであれば問題ありません）"
+            ),
+        })
     return issues
 
 
@@ -130,8 +135,9 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
             if pd.isna(ri["date"]) or pd.isna(rj["date"]):
                 continue
 
-            days_diff = abs((ri["date"] - rj["date"]).days)
-            if days_diff > 7:
+            # 日付が異なる場合は重複ではない（少額・定額取引は別日に同額が出るのが自然）
+            # → 完全に同一日付の同額・同科目のみを重複候補とする
+            if ri["date"].normalize() != rj["date"].normalize():
                 continue
 
             # 摘要の類似度（簡易）― NaN対策でdesc_safeを使用
@@ -352,20 +358,20 @@ def _check_5_3_digit_error(df: pd.DataFrame) -> List[Dict[str, Any]]:
 def _check_5_4_entertainment(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues = []
 
-    # 会議費で1万円超
+    # 会議費で2万円超（最低2名×1万円＝2万円までは通常範囲のため指摘しない）
     kaigi = df[
         df["debit_account"].astype(str).str.contains("会議費", na=False) &
-        (df["debit_amount"] > ENTERTAINMENT_UNIT_LIMIT)
+        (df["debit_amount"] > KAIGI_MIN_FLAG)
     ]
     for _, row in kaigi.iterrows():
         issues.append({
             "level": "warning", "category": "5-4 交際費境界",
             "check_id": "5-4", "account": "会議費",
-            "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+            "month": date_safe(row), "slip": slip_safe(row),
             "message": (
-                f"【5-4・中】会議費 {row['debit_amount']:,.0f}円 が1万円を超えています。"
+                f"【5-4・中】会議費 {row['debit_amount']:,.0f}円 が2万円を超えています。"
                 "1人あたり1万円超の飲食は交際費（損金不算入の可能性）となる場合があります。"
-                "参加人数の確認が必要です。"
+                "参加人数（1人あたり単価）の確認が必要です。"
                 + (f"（摘要: 「{desc_safe(row)}」）" if desc_safe(row) else "")
             ),
         })
