@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>会計データチェックシステム</title>
+  <title>Hallelujah 会計データチェックシステム</title>
+  <link rel="icon" type="image/png" href="/static/logo.png">
   <!-- Flatpickr カレンダーライブラリ -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_orange.css">
@@ -31,12 +32,7 @@
       display: flex; align-items: center; gap: 14px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
-    .header-logo {
-      width: 42px; height: 42px;
-      background: linear-gradient(135deg, var(--orange), var(--orange-light));
-      border-radius: 10px; display: flex; align-items: center;
-      justify-content: center; font-size: 1.4rem; flex-shrink: 0;
-    }
+    .header-logo-img { height: 52px; width: auto; flex-shrink: 0; }
     header h1   { font-size: 1.35rem; font-weight: 800; color: var(--text); }
     header .sub { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
 
@@ -192,9 +188,8 @@
 <body>
 
 <header>
-  <div class="header-logo">📊</div>
+  <img src="/static/logo.png" alt="Hallelujah 会計データチェックシステム" class="header-logo-img">
   <div>
-    <h1>会計データチェックシステム</h1>
     <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
   </div>
 </header>
