@@ -160,11 +160,11 @@ def _check_3_3_repair_capitalization(df: pd.DataFrame) -> List[Dict[str, Any]]:
     def _line(t):
         d = t["date"]
         ds = f"{d.year}/{d.month}/{d.day}" if pd.notna(d) else "日付不明"
-        slip = f" 伝票No.{t['slip']}" if t["slip"] else ""
-        return f"{ds}{slip} {t['amount']:,.0f}円"
+        slip = f"伝票No.{t['slip']}　" if t["slip"] else ""
+        return f"・{ds}　{slip}{t['amount']:,.0f}円"
 
-    lines = "、".join(_line(t) for t in targets[:20])
-    suffix = f" 他{len(targets)-20}件" if len(targets) > 20 else ""
+    lines = "\n".join(_line(t) for t in targets[:30])
+    suffix = f"\n・ほか{len(targets)-30}件" if len(targets) > 30 else ""
 
     issues.append({
         "level": "warning", "category": "3-3 修繕費資本的支出",
@@ -172,8 +172,8 @@ def _check_3_3_repair_capitalization(df: pd.DataFrame) -> List[Dict[str, Any]]:
         "month": "全期間",
         "message": (
             f"【3-3・高】20万円以上の修繕費が {len(targets)}件（合計 {total_amt:,.0f}円）あります。"
-            "資本的支出（価値向上・耐用年数延長）に該当するものは固定資産計上が必要です。"
-            f"対象: {lines}{suffix}"
+            "資本的支出（価値向上・耐用年数延長）に該当するものは固定資産計上が必要です。\n"
+            f"【対象】\n{lines}{suffix}"
         ),
     })
     return issues

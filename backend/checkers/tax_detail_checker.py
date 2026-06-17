@@ -495,11 +495,11 @@ def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
     def _line(row):
         d = row["date"]
         ds = f"{d.year}/{d.month}/{d.day}" if pd.notna(d) else "日付不明"
-        slip = f" 伝票No.{slip_safe(row)}" if slip_safe(row) else ""
-        return f"{ds}{slip} {row['debit_amount']:,.0f}円"
+        slip = f"伝票No.{slip_safe(row)}　" if slip_safe(row) else ""
+        return f"・{ds}　{slip}{row['debit_amount']:,.0f}円"
 
-    lines = "、".join(_line(r) for _, r in hits.head(20).iterrows())
-    suffix = f" 他{cnt-20}件" if cnt > 20 else ""
+    lines = "\n".join(_line(r) for _, r in hits.head(30).iterrows())
+    suffix = f"\n・ほか{cnt-30}件" if cnt > 30 else ""
 
     issues.append({
         "level": "error", "category": "2-9 振込手数料返還",
@@ -509,8 +509,8 @@ def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
             f"【2-9・高】売掛金回収時に差し引かれた振込手数料と思われる仕訳が "
             f"{cnt}件（合計 {total:,.0f}円）あります。"
             "税区分を「課税仕入（10%）」から「売上対価の返還等（売返・10%）」に"
-            "変更してください（1万円未満の売上返還はインボイス交付義務が免除）。"
-            f"対象: {lines}{suffix}"
+            "変更してください（1万円未満の売上返還はインボイス交付義務が免除）。\n"
+            f"【対象】\n{lines}{suffix}"
         ),
     })
     return issues

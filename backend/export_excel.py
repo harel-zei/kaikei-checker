@@ -195,8 +195,11 @@ def _build_checksheet(wb, issues, period):
             "show_error": False,
         })
 
-        lines = max(1, len(clean_msg) // 40 + 1)
-        ws.set_row(row, max(18, min(lines * 15, 80)))
+        # 明示的な改行（\n）と折り返しの両方を考慮して行高を決める
+        explicit_lines = clean_msg.count("\n") + 1
+        wrap_lines = sum(max(1, len(seg) // 40 + 1) for seg in clean_msg.split("\n"))
+        total_lines = max(explicit_lines, wrap_lines)
+        ws.set_row(row, max(18, min(total_lines * 15, 480)))
 
     # ── ウィンドウ枠の固定（4行目ヘッダーを固定）──
     ws.freeze_panes(4, 0)
