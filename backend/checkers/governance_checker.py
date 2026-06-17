@@ -300,33 +300,40 @@ def _check_5_3_digit_error(df: pd.DataFrame) -> List[Dict[str, Any]]:
         if len(monthly) < 3:
             continue
 
-        mean_val = monthly.mean()
-        if mean_val == 0:
+        # 年払い等の大口計上が平均を歪めるため、基準は中央値を使う
+        # （平均だと1回の年払いで毎月が「急減」と誤判定される）
+        base = monthly.median()
+        if base <= 0:
             continue
 
+        spikes, drops = [], []
         for p, val in monthly.items():
-            if val > mean_val * DIGIT_ERROR_MULTIPLIER and abs(val - mean_val) > 50000:
-                issues.append({
-                    "level": "warning", "category": "5-3 桁数ミスの可能性",
-                    "check_id": "5-3", "account": account,
-                    "month": str(p),
-                    "message": (
-                        f"【5-3・中】{account} が {p} に {val:,.0f}円 と、"
-                        f"平均（{mean_val:,.0f}円）の {val/mean_val:.1f}倍 になっています。"
-                        "桁数ミスや二重計上の可能性があります。"
-                    ),
-                })
-            elif val > 0 and val < mean_val / DIGIT_ERROR_MULTIPLIER and mean_val > 50000:
-                issues.append({
-                    "level": "warning", "category": "5-3 桁数ミスの可能性",
-                    "check_id": "5-3", "account": account,
-                    "month": str(p),
-                    "message": (
-                        f"【5-3・中】{account} が {p} に {val:,.0f}円 と、"
-                        f"平均（{mean_val:,.0f}円）の {val/mean_val*100:.0f}% に急減しています。"
-                        "桁数ミスまたは計上漏れの可能性があります。"
-                    ),
-                })
+            if val > base * DIGIT_ERROR_MULTIPLIER and abs(val - base) > 50000:
+                spikes.append(f"{p}：{val:,.0f}円")
+            elif val > 0 and val < base / DIGIT_ERROR_MULTIPLIER and base > 50000:
+                drops.append(f"{p}：{val:,.0f}円")
+
+        # 科目ごとに「急増」「急減」をそれぞれ1件にまとめる
+        if spikes:
+            issues.append({
+                "level": "warning", "category": "5-3 桁数ミスの可能性",
+                "check_id": "5-3", "account": account, "month": "全期間",
+                "message": (
+                    f"【5-3・中】{account} が中央値（{base:,.0f}円）の{DIGIT_ERROR_MULTIPLIER:.0f}倍超の月が "
+                    f"{len(spikes)}ヶ月 あります（{'、'.join(spikes[:12])}）。"
+                    "桁数ミスや二重計上の可能性があります。"
+                ),
+            })
+        if drops:
+            issues.append({
+                "level": "warning", "category": "5-3 桁数ミスの可能性",
+                "check_id": "5-3", "account": account, "month": "全期間",
+                "message": (
+                    f"【5-3・中】{account} が中央値（{base:,.0f}円）を大きく下回る月が "
+                    f"{len(drops)}ヶ月 あります（{'、'.join(drops[:12])}）。"
+                    "計上漏れの可能性があります（毎月計上でない保険等であれば問題ありません）。"
+                ),
+            })
 
     # 逆仕訳チェック（費用科目の貸方に大きな単発計上）
     expense_accounts = ["給料手当", "外注費", "広告宣伝費", "修繕費", "消耗品費"]

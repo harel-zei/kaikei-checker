@@ -218,9 +218,10 @@ def _check_month_over_month(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """前月比較による異常値チェック（±50%超の変動を検出）"""
     issues = []
 
-    # 主要費用科目をチェック
-    # 租税公課は月によって大きく変動するため前月比チェックから除外（YoY累計で比較）
-    target_accounts = ["給与", "外注費", "地代家賃", "広告宣伝費"]
+    # 毎月ほぼ一定であるべき費用のみを対象とする。
+    # 広告宣伝費はキャンペーンで変動が大きく、租税公課も月で変わるため対象外
+    # （これらはYoY累計チェックで比較する）。
+    target_accounts = ["給与", "外注費", "地代家賃"]
 
     for account in target_accounts:
         entries = df[
@@ -235,24 +236,27 @@ def _check_month_over_month(df: pd.DataFrame) -> List[Dict[str, Any]]:
         if len(monthly) < 2:
             continue
 
+        # 変動した月をまとめて1件に集約（科目ごとに何度も指摘しない）
+        changes = []
         for i in range(1, len(monthly)):
             prev = monthly.iloc[i - 1]
             curr = monthly.iloc[i]
             month = monthly.index[i]
-
             if prev == 0:
                 continue
-
             change_rate = (curr - prev) / prev * 100
-
             if abs(change_rate) > 50 and abs(curr - prev) > 50000:
-                direction = "増加" if change_rate > 0 else "減少"
-                issues.append({
-                    "level": "warning",
-                    "category": "PL",
-                    "account": account,
-                    "month": str(month),
-                    "message": f"【要確認】{account} が前月比 {change_rate:+.1f}% （{prev:,.0f}円 → {curr:,.0f}円）と大きく{direction}しています。原因を確認してください。",
-                })
+                changes.append(f"{month}：{change_rate:+.0f}%（{prev:,.0f}→{curr:,.0f}円）")
+
+        if changes:
+            issues.append({
+                "level": "warning", "category": "PL", "account": account,
+                "month": "全期間",
+                "message": (
+                    f"【要確認】{account} に前月比±50%超の変動が {len(changes)}ヶ月 あります: "
+                    + "、".join(changes[:12])
+                    + "。原因を確認してください。"
+                ),
+            })
 
     return issues

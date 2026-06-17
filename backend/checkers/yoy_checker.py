@@ -154,8 +154,26 @@ def _compare_bs_balance(
         if prior_end == 0:
             continue
 
-        pct = (curr_end - prior_end) / abs(prior_end) * 100
-        if abs(pct) >= ALERT_THRESHOLD and abs(curr_end - prior_end) >= MIN_AMOUNT_DIFF:
+        diff = curr_end - prior_end
+        if abs(diff) < MIN_AMOUNT_DIFF:
+            continue
+
+        # 前期末と当期末で符号が反転している場合は%が無意味なので差額で表現
+        if (prior_end < 0) != (curr_end < 0):
+            issues.append({
+                "level": "warning", "category": "前年比(BS)",
+                "account": account, "month": "期末残高比較",
+                "message": (
+                    f"【前年比較・期末残高】{account} の期末残高の符号が反転しています"
+                    f"（前年期末: {prior_end:,.0f}円 → 当年期末: {curr_end:,.0f}円、"
+                    f"差額: {diff:+,.0f}円）。残高の貸借が逆転しているため確認してください。"
+                ),
+                "detail": {"current": float(curr_end), "prior": float(prior_end)},
+            })
+            continue
+
+        pct = diff / abs(prior_end) * 100
+        if abs(pct) >= ALERT_THRESHOLD:
             direction = "増加" if pct > 0 else "減少"
             issues.append({
                 "level":    "warning",

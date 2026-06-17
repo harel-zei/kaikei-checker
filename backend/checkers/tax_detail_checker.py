@@ -172,10 +172,21 @@ def _check_2_3_govt_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     # トリガーワードごとに店舗名除外チェックを行う
     GOVT_TRIGGER_STORE_CHECK = ["市役所", "区役所", "町役場", "村役場"]
+    # 駐車場・交通・旅行の文脈は、役所/法務局等が「場所の目印」として
+    # 使われているだけで行政手数料ではない（例: 法務局前のコインパーキング）
+    KW_GOVT_EXCLUDE_CONTEXT = [
+        "駐車", "ﾊﾟｰｷﾝｸﾞ", "パーキング", "PARKING", "Parking",
+        "NPC24", "ﾀｲﾑｽﾞ", "タイムズ", "TIMES", "コインパー",
+        "研修", "出張", "旅行", "営業", "ＧＯアプリ", "GOアプリ",
+        "タクシー", "電車", "バス", "高速", "ＥＴＣ", "ETC",
+    ]
 
     def _is_genuine_govt(text: str) -> bool:
         """店舗名・住所の一部ではなく、本当の行政機関への支払かを判定"""
         if not _has_keyword(text, KW_GOVT_FEE):
+            return False
+        # 駐車場・交通・旅行の文脈なら役所等は地名の目印 → 除外
+        if any(k.lower() in str(text).lower() for k in KW_GOVT_EXCLUDE_CONTEXT):
             return False
         # 店舗名として使われていそうなキーワードは除外
         for trigger in GOVT_TRIGGER_STORE_CHECK:
@@ -183,7 +194,12 @@ def _check_2_3_govt_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 return False
         return True
 
+    # 旅費交通費・福利厚生費は行政手数料の計上科目ではないため対象外
+    EXCLUDE_ACCOUNTS = ["旅費交通費", "福利厚生費"]
     targets = df[
+        ~df["debit_account"].fillna("").astype(str).apply(
+            lambda x: any(a in x for a in EXCLUDE_ACCOUNTS)
+        ) &
         df["description"].fillna("").astype(str).apply(_is_genuine_govt) &
         df[col].astype(str).apply(_has_tax_10)
     ]
