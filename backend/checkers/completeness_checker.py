@@ -55,6 +55,62 @@ def check_completeness(df: pd.DataFrame, fiscal_cutoff_day: int = 1) -> List[Dic
     issues.extend(_check_1_1_recurring(df, fiscal_cutoff_day))
     issues.extend(_check_1_2_month_end_timing(df))
     issues.extend(_check_1_3_dept_anomaly(df))
+    issues.extend(_check_1_4_recurring_subaccount(df, fiscal_cutoff_day))
+    return issues
+
+
+# 1-4: 補助科目単位で毎月発生していた費用の当月漏れを検知する対象科目
+RECURRING_SUB_ACCOUNTS = [
+    "賃借料", "地代家賃", "リース料", "保険料", "支払手数料",
+    "水道光熱費", "通信費", "諸会費",
+]
+
+
+def _check_1_4_recurring_subaccount(df: pd.DataFrame, fiscal_cutoff_day: int = 1) -> List[Dict[str, Any]]:
+    """
+    補助科目（取引先・契約）単位で「毎月計上されていたものが直近月だけ抜けた」を検知する。
+
+    例: 賃借料の補助科目「トランクルーム」が12月〜4月まで毎月あるのに5月だけ無い
+        → 科目全体（賃借料）では他の賃借料があるため 1-1 では気づけない
+    """
+    issues = []
+    if "debit_sub" not in df.columns or df["date"].dropna().empty:
+        return issues
+
+    work = df.copy()
+    work["_fp"] = work["date"].apply(
+        lambda d: get_fiscal_period(d, fiscal_cutoff_day) if pd.notna(d) else pd.NaT
+    )
+    all_periods = sorted(work["_fp"].dropna().unique())
+    if len(all_periods) < 4:
+        return issues
+    last = all_periods[-1]
+    preceding = all_periods[:-1]
+    recent3 = preceding[-3:]  # 直近月の直前3ヶ月
+
+    for account in RECURRING_SUB_ACCOUNTS:
+        acc_rows = work[work["debit_account"].fillna("").astype(str).str.contains(account, na=False)]
+        if acc_rows.empty:
+            continue
+
+        for sub, grp in acc_rows.groupby(acc_rows["debit_sub"].fillna("").astype(str).str.strip()):
+            if sub in ("", "nan", "指定なし"):
+                continue
+            months = set(grp["_fp"].dropna().unique())
+            # 直近月に無く、その直前3ヶ月すべてに在った＝定例の当月漏れ
+            if last not in months and len(recent3) == 3 and all(p in months for p in recent3):
+                typical = grp["debit_amount"].median()
+                issues.append({
+                    "level": "warning", "category": "1-4 定例費用の当月漏れ",
+                    "check_id": "1-4", "account": account,
+                    "month": str(last),
+                    "message": (
+                        f"【1-4・高】{account}「{sub}」が {last} に計上されていません。"
+                        f"直前の {recent3[0]}〜{recent3[-1]} は毎月計上（月額 約{typical:,.0f}円）"
+                        "されていたため、当月の計上漏れの可能性があります。"
+                        "（契約終了・解約による場合は問題ありません）"
+                    ),
+                })
     return issues
 
 
