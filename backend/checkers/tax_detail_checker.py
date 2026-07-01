@@ -65,9 +65,18 @@ KW_OVERSEAS_UNCERTAIN = [
     "Shopify", "Canva", "Notion", "Figma", "Discord",
     "Wix", "Squarespace", "Mailchimp", "Zapier", "Stripe",
 ]
+# 明確に海外と判断できる語のみ。「航空券」単独は国内線を拾うため使わない
 KW_OVERSEAS_TRAVEL = [
-    "海外出張", "渡航", "航空券", "国際線", "海外ホテル", "海外現地", "海外",
+    "海外出張", "渡航", "国際線", "海外ホテル", "海外現地", "海外",
     "USD", "EUR", "GBP", "CNY", "HKD", "SGD", "AUD", "外貨", "免税店",
+]
+# 国内空港・都市名を含む場合は国内線として除外
+KW_DOMESTIC_ROUTE = [
+    "国内", "羽田", "成田", "伊丹", "関空", "関西空港", "セントレア", "中部",
+    "新千歳", "千歳", "福岡", "那覇", "沖縄", "北九州", "神戸", "小牧",
+    "東京", "大阪", "名古屋", "札幌", "仙台", "広島", "松山", "高松",
+    "鹿児島", "宮崎", "熊本", "長崎", "大分", "岡山", "新潟", "金沢", "富山",
+    "ANA", "ＡＮＡ", "JAL", "ＪＡＬ", "スカイマーク", "ジェットスター", "ピーチ", "Peach",
 ]
 
 TAX_10 = ["課税", "10%", "課税売上", "課税仕入"]
@@ -304,10 +313,18 @@ def _check_2_6_overseas_travel(df: pd.DataFrame) -> List[Dict[str, Any]]:
         lambda x: bool(x) and any(a in x for a in target_accounts)
     )
 
+    # 明確な海外マーカー（これがあれば国内空港名があっても海外と判定）
+    STRONG_OVERSEAS = ["国際線", "海外", "渡航", "免税店",
+                       "USD", "EUR", "GBP", "CNY", "HKD", "SGD", "AUD", "外貨"]
+
     def _is_overseas(text: str) -> bool:
         t = str(text)
-        # 「国内」と明記されている場合は海外ではない（例: JAL国内線航空券）
-        if "国内" in t:
+        # 明確な海外マーカーがあれば海外（成田発ロサンゼルス行き等を取りこぼさない）
+        if _has_keyword(t, STRONG_OVERSEAS):
+            return True
+        # 国内空港・都市名・国内航空会社を含む場合は国内線とみなし除外
+        # （例: 航空券 大阪-東京、伊丹-羽田、ANA/JAL便）
+        if _has_keyword(t, KW_DOMESTIC_ROUTE):
             return False
         return _has_keyword(t, KW_OVERSEAS_TRAVEL)
 
