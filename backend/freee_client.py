@@ -39,12 +39,16 @@ def is_configured() -> bool:
 
 # ── OAuth ────────────────────────────────────────────────
 def build_authorize_url(state: str = "") -> str:
-    """freee認可画面のURLを生成する。全事業所認可（prompt=select_companyを付けない）。"""
+    """freee認可画面のURLを生成する。
+    FREEE_ALL_COMPANIES=1 のときは全事業所認可（prompt=select_companyを省く。非推奨方式）。
+    既定では freee推奨の select_company（事業所を選んで認可）を使う。"""
     params = {
         "client_id": FREEE_CLIENT_ID,
         "redirect_uri": FREEE_REDIRECT_URI,
         "response_type": "code",
     }
+    if os.environ.get("FREEE_ALL_COMPANIES", "") != "1":
+        params["prompt"] = "select_company"
     if state:
         params["state"] = state
     q = "&".join(f"{k}={requests.utils.quote(str(v), safe='')}" for k, v in params.items())
@@ -53,13 +57,17 @@ def build_authorize_url(state: str = "") -> str:
 
 def exchange_code(code: str) -> dict:
     """認可コードをアクセストークンに交換する。"""
-    r = requests.post(TOKEN_URL, data={
+    payload = {
         "grant_type": "authorization_code",
         "client_id": FREEE_CLIENT_ID,
         "client_secret": FREEE_CLIENT_SECRET,
         "code": code,
         "redirect_uri": FREEE_REDIRECT_URI,
-    }, timeout=_TIMEOUT)
+    }
+    print(f"[freee exchange] code={code[:8]}... client_id={FREEE_CLIENT_ID} "
+          f"redirect_uri={FREEE_REDIRECT_URI} secret_len={len(FREEE_CLIENT_SECRET)}", flush=True)
+    r = requests.post(TOKEN_URL, data=payload, timeout=_TIMEOUT)
+    print(f"[freee exchange] status={r.status_code} body={r.text[:300]}", flush=True)
     if r.status_code != 200:
         raise RuntimeError(f"トークン取得失敗 [{r.status_code}]: {r.text[:300]}")
     return _with_expiry(r.json())
@@ -96,6 +104,43 @@ def list_companies(access_token: str) -> list:
     if r.status_code != 200:
         raise RuntimeError(f"事業所一覧取得失敗 [{r.status_code}]: {r.text[:300]}")
     return r.json().get("companies", [])
+
+
+def get_trial_bs_balances(access_token: str, company_id: int, breakdown: str = "partner") -> list:
+    """貸借対照表の試算表（勘定科目・取引先別の残高）を取得する。"""
+    params = {"company_id": company_id}
+    if breakdown:
+        params["breakdown_display_type"] = breakdown
+    r = requests.get(f"{API_BASE}/api/1/reports/trial_bs", headers=_headers(access_token),
+                     params=params, timeout=_TIMEOUT)
+    if r.status_code != 200:
+        raise RuntimeError(f"試算表(BS)取得失敗 [{r.status_code}]: {r.text[:200]}")
+    return r.json().get("trial_bs", {}).get("balances", [])
+
+
+def build_opening_balances(access_token: str, company_id: int) -> dict:
+    """
+    freeeの試算表から当期の期首残高辞書を組み立てる。
+    形式は bs_checker が参照する {"勘定科目": 金額, "勘定科目（取引先）": 金額}。
+    """
+    ob = {}
+    try:
+        balances = get_trial_bs_balances(access_token, company_id, breakdown="partner")
+    except Exception:
+        balances = get_trial_bs_balances(access_token, company_id, breakdown="")
+    for b in balances:
+        acc = str(b.get("account_item_name") or "").strip()
+        if not acc:
+            continue
+        op = b.get("opening_balance")
+        if op is not None:
+            ob[acc] = float(op)
+        for p in (b.get("partners") or []):
+            pname = str(p.get("name") or "").strip()
+            pop = p.get("opening_balance")
+            if pname and pop:  # 残高0の取引先は省略
+                ob[f"{acc}（{pname}）"] = float(pop)
+    return ob
 
 
 def get_journal_csv(access_token: str, company_id: int,

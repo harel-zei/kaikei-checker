@@ -265,10 +265,16 @@ async def check_auto(
     return await _run_pipeline(file_data, client_name, check_until)
 
 
-async def _run_pipeline(file_data, client_name, check_until):
+async def _run_pipeline(file_data, client_name, check_until, ob_direct=None, extra_log=""):
     """ファイル群（(filename, content)のリスト）を自動振り分け→前期補完→チェック実行。
-    CSVアップロードとfreee API取得の両方から使う共通処理。"""
+    CSVアップロードとfreee API取得の両方から使う共通処理。
+    ob_direct: freee等から直接取得した期首残高辞書（あれば最優先で使用）。"""
     classified = auto_classify_files(file_data)
+    if ob_direct:
+        classified["ob_direct"] = ob_direct
+        classified["log"].append(
+            f"🔗 freeeの試算表から期首残高を取得: {len(ob_direct)}件 {extra_log}"
+        )
 
     # 前期データが不足している場合、保存済みクライアントデータで補完
     if client_name:
@@ -369,7 +375,7 @@ async def freee_check(
     end_date:    Optional[str] = Form(None),
     _: None = Depends(require_auth),
 ):
-    """freeeから当期仕訳帳を取得し、（保存済み前期データと合わせて）チェックを実行する。"""
+    """freeeから当期仕訳帳＋期首残高を取得してチェックを実行する。"""
     try:
         token = freee_token_store.get_valid_access_token()
         journal_csv = freee_client.get_journal_csv(
@@ -378,8 +384,17 @@ async def freee_check(
     except Exception as e:
         raise HTTPException(400, f"freeeからの取得に失敗しました: {e}")
 
+    # 期首残高もfreeeの試算表から取得（取れなくても仕訳帳だけで続行）
+    ob_direct = {}
+    ob_note = ""
+    try:
+        ob_direct = freee_client.build_opening_balances(token, company_id)
+    except Exception as e:
+        ob_note = f"（期首残高の取得に失敗: {e}）"
+
     file_data = [("freee_仕訳帳.csv", journal_csv)]
-    return await _run_pipeline(file_data, client_name, check_until)
+    return await _run_pipeline(file_data, client_name, check_until,
+                               ob_direct=ob_direct, extra_log=ob_note)
 
 
 # ── 個別指定エンドポイント（従来の6スロット）──────────────────
@@ -446,11 +461,15 @@ async def _run_checks(
         _parse_balance_file(c["balance_main_prior"], use_ending=True) if c.get("balance_main_prior") else {},
         _parse_balance_file(c["balance_sub_prior"],  use_ending=True) if c.get("balance_sub_prior")  else {},
     )
-    # 前期末由来とアップロード分をマージ（同一科目は当期首ファイルを優先）
-    # どちらか一方のみだと、当期ファイルに含まれない科目の期首残高が
-    # 保存済み前期データにあっても使われない問題が起きるためマージする
-    ob = _merge_balances(ob_from_prior, ob_from_current)
-    if ob_from_current and ob_from_prior:
+    # freee等から直接渡された期首残高（勘定科目・取引先別）
+    ob_direct = c.get("ob_direct") or {}
+
+    # 優先順: freee直接取得 > 当期首ファイル > 前期末由来
+    # （同一キーは前のものを優先＝あとから渡すほど下位）
+    ob = _merge_balances(ob_from_prior, ob_from_current, ob_direct)
+    if ob_direct:
+        ob_source = "freeeの試算表（期首残高）から取得"
+    elif ob_from_current and ob_from_prior:
         ob_source = "当期首ファイル＋前期末から補完"
     elif ob_from_current:
         ob_source = "当期首ファイル"
