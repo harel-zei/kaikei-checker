@@ -328,6 +328,38 @@
     </div>
   </div>
 
+  <!-- ══ freee API連携（任意） ══ -->
+  <div class="card" id="freeeCard" style="display:none;">
+    <div class="card-title">🔗 freeeから取得（API連携）</div>
+    <div id="freeeDisconnected" style="display:none;">
+      <p style="font-size:.85rem;color:#374151;margin-bottom:12px;">
+        freeeと連携すると、CSVを書き出さずに仕訳帳を直接取得してチェックできます。
+      </p>
+      <button class="btn btn-primary" onclick="freeeConnect()" style="justify-content:center;">
+        freeeと連携する
+      </button>
+    </div>
+    <div id="freeeConnected" style="display:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="font-size:.85rem;color:#059669;font-weight:700;">✅ freee連携済み</span>
+        <button class="btn" style="font-size:.76rem;padding:4px 12px;background:#fef2f2;color:#dc2626;"
+                onclick="freeeDisconnect()">連携解除</button>
+      </div>
+      <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">対象のfreee事業所を選択</label>
+      <select id="freeeCompanySelect"
+              style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.9rem;background:#fdf9f5;margin-bottom:12px;">
+        <option value="">-- 読み込み中... --</option>
+      </select>
+      <button class="btn btn-primary" id="freeeCheckBtn" onclick="runFreeeCheck()"
+              style="width:100%;justify-content:center;">
+        freeeから取得してチェック実行
+      </button>
+      <p style="font-size:.78rem;color:#9a7060;margin-top:8px;">
+        ※ 前期比較を行うには、上でクライアントを選択（前期データが保存済みのもの）してください。
+      </p>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-title">📂 当期ファイルをアップロード</div>
 
@@ -780,6 +812,7 @@
 
   // 初期化
   loadClientList();
+  initFreee();
 
   // ════════════════════════════════════
   // ファイルアップロード
@@ -878,6 +911,61 @@
     showLoading();
     try {
       const data = await fetchJSON('/api/check-auto', { method: 'POST', body: fd });
+      renderResults(data);
+    } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
+  }
+
+  // ── freee 連携 ──
+  async function initFreee() {
+    try {
+      const s = await fetchJSON('/api/freee/status');
+      if (!s.configured) return;                 // 未設定ならカード自体を出さない
+      document.getElementById('freeeCard').style.display = 'block';
+      if (s.connected) {
+        document.getElementById('freeeConnected').style.display = 'block';
+        document.getElementById('freeeDisconnected').style.display = 'none';
+        loadFreeeCompanies();
+      } else {
+        document.getElementById('freeeConnected').style.display = 'none';
+        document.getElementById('freeeDisconnected').style.display = 'block';
+      }
+    } catch(e) { /* freee未設定時は何もしない */ }
+  }
+
+  function freeeConnect() {
+    // 認可画面へ（新しいタブ）。完了後にこのタブへ戻ってくる
+    window.open('/api/freee/authorize', '_blank');
+    alert('freeeの認可画面を開きました。許可が完了したら、この画面を再読み込みしてください。');
+  }
+
+  async function freeeDisconnect() {
+    if (!confirm('freee連携を解除しますか？')) return;
+    await fetch('/api/freee/disconnect', { method: 'POST' });
+    initFreee();
+  }
+
+  async function loadFreeeCompanies() {
+    const sel = document.getElementById('freeeCompanySelect');
+    try {
+      const data = await fetchJSON('/api/freee/companies');
+      sel.innerHTML = '<option value="">-- 事業所を選択 --</option>' +
+        data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    } catch(e) {
+      sel.innerHTML = '<option value="">取得失敗（再連携が必要かもしれません）</option>';
+    }
+  }
+
+  async function runFreeeCheck() {
+    const cid = document.getElementById('freeeCompanySelect').value;
+    if (!cid) return alert('freee事業所を選択してください');
+    const fd = new FormData();
+    fd.append('company_id', cid);
+    if (currentClient) fd.append('client_name', currentClient);
+    const checkUntil = document.getElementById('checkUntilInput').value;
+    if (checkUntil) fd.append('check_until', checkUntil);
+    showLoading();
+    try {
+      const data = await fetchJSON('/api/freee/check', { method: 'POST', body: fd });
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }

@@ -9,8 +9,11 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import io, csv as csv_module
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from typing import List, Optional
+
+import freee_client
+import freee_token_store
 
 from parsers.csv_parser import (
     parse_csv, parse_opening_balances, parse_ending_balances,
@@ -259,6 +262,12 @@ async def check_auto(
         except Exception as e:
             raise HTTPException(400, f"{f.filename} の読み込みに失敗しました: {e}")
 
+    return await _run_pipeline(file_data, client_name, check_until)
+
+
+async def _run_pipeline(file_data, client_name, check_until):
+    """ファイル群（(filename, content)のリスト）を自動振り分け→前期補完→チェック実行。
+    CSVアップロードとfreee API取得の両方から使う共通処理。"""
     classified = auto_classify_files(file_data)
 
     # 前期データが不足している場合、保存済みクライアントデータで補完
@@ -288,6 +297,89 @@ async def check_auto(
     client_settings = get_client_settings(client_name) if client_name else {}
 
     return await _run_checks(classified, check_until=check_until, client_settings=client_settings)
+
+
+# ═══════════════════════════════════════════════════
+# freee API 連携
+# ═══════════════════════════════════════════════════
+@app.get("/api/freee/status")
+async def freee_status(_: None = Depends(require_auth)):
+    """freee連携の状態を返す。"""
+    return JSONResponse({
+        "configured": freee_client.is_configured(),
+        "connected":  freee_token_store.is_connected(),
+    })
+
+
+@app.get("/api/freee/authorize")
+async def freee_authorize(_: None = Depends(require_auth)):
+    """freeeの認可画面へリダイレクトする。"""
+    if not freee_client.is_configured():
+        raise HTTPException(400, "freee連携が未設定です（FREEE_CLIENT_ID等の環境変数が必要）")
+    return RedirectResponse(freee_client.build_authorize_url())
+
+
+@app.get("/api/freee/callback")
+async def freee_callback(code: str = None, error: str = None):
+    """freeeからの認可コールバック。コードをトークンに交換して保存する。"""
+    if error:
+        return HTMLResponse(f"<h3>連携に失敗しました: {error}</h3><a href='/'>戻る</a>")
+    if not code:
+        return HTMLResponse("<h3>認可コードがありません</h3><a href='/'>戻る</a>")
+    try:
+        tok = freee_client.exchange_code(code)
+        freee_token_store.save_token(tok)
+    except Exception as e:
+        return HTMLResponse(f"<h3>トークン取得に失敗しました: {e}</h3><a href='/'>戻る</a>")
+    return HTMLResponse(
+        "<h3>✅ freeeと連携しました。</h3>"
+        "<p>このタブを閉じて、システムに戻ってください。</p>"
+        "<script>setTimeout(function(){location.href='/'},1500)</script>"
+    )
+
+
+@app.post("/api/freee/disconnect")
+async def freee_disconnect(_: None = Depends(require_auth)):
+    freee_token_store.clear()
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/freee/companies")
+async def freee_companies(_: None = Depends(require_auth)):
+    """アクセス可能なfreee事業所一覧を返す。"""
+    try:
+        token = freee_token_store.get_valid_access_token()
+        companies = freee_client.list_companies(token)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({
+        "companies": [
+            {"id": c["id"], "name": c.get("display_name") or c.get("name") or str(c["id"])}
+            for c in companies
+        ]
+    })
+
+
+@app.post("/api/freee/check")
+async def freee_check(
+    company_id:  int           = Form(...),
+    client_name: Optional[str] = Form(None),
+    check_until: Optional[str] = Form(None),
+    start_date:  Optional[str] = Form(None),
+    end_date:    Optional[str] = Form(None),
+    _: None = Depends(require_auth),
+):
+    """freeeから当期仕訳帳を取得し、（保存済み前期データと合わせて）チェックを実行する。"""
+    try:
+        token = freee_token_store.get_valid_access_token()
+        journal_csv = freee_client.get_journal_csv(
+            token, company_id, start_date=start_date, end_date=end_date
+        )
+    except Exception as e:
+        raise HTTPException(400, f"freeeからの取得に失敗しました: {e}")
+
+    file_data = [("freee_仕訳帳.csv", journal_csv)]
+    return await _run_pipeline(file_data, client_name, check_until)
 
 
 # ── 個別指定エンドポイント（従来の6スロット）──────────────────
