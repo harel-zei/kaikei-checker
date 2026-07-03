@@ -36,6 +36,14 @@
     header h1   { font-size: 1.35rem; font-weight: 800; color: var(--text); }
     header .sub { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
 
+    /* ステップ見出し */
+    .step-head { display:flex; align-items:center; gap:10px; font-size:1.02rem; font-weight:700; color:var(--text); margin-bottom:14px; }
+    .step-no { width:24px; height:24px; border-radius:50%; background:var(--orange); color:#fff; font-size:.82rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    /* データ取り込みの切替タブ */
+    .seg { display:inline-flex; background:#fdf3ea; border:1.5px solid #f0c090; border-radius:10px; padding:3px; margin-bottom:14px; gap:3px; }
+    .seg-btn { font-size:.86rem; padding:7px 18px; border-radius:7px; border:none; background:transparent; color:#9a7060; font-weight:600; cursor:pointer; transition:.15s; }
+    .seg-btn.active { background:var(--orange); color:#fff; }
+
     .container { max-width: 860px; margin: 0 auto; padding: 28px 16px; }
 
     .card {
@@ -196,9 +204,9 @@
 
 <div class="container">
 
-  <!-- ══ クライアント選択カード ══ -->
+  <!-- ══ STEP 1: クライアント選択 ══ -->
   <div class="card" id="clientCard">
-    <div class="card-title">🏢 クライアント選択</div>
+    <div class="step-head"><span class="step-no">1</span>クライアントを選ぶ</div>
 
     <div class="client-row">
       <!-- セレクトボックス -->
@@ -328,98 +336,97 @@
     </div>
   </div>
 
-  <!-- ══ freee API連携（任意） ══ -->
-  <div class="card" id="freeeCard" style="display:none;">
-    <div class="card-title">🔗 freeeから取得（API連携）</div>
-    <div id="freeeDisconnected" style="display:none;">
-      <p style="font-size:.85rem;color:#374151;margin-bottom:12px;">
-        freeeと連携すると、CSVを書き出さずに仕訳帳を直接取得してチェックできます。
-      </p>
-      <button class="btn btn-primary" onclick="freeeConnect()" style="justify-content:center;">
-        freeeと連携する
+  <!-- ══ STEP 2: 当期データを取り込む（CSV / freee タブ） ══ -->
+  <div class="card">
+    <div class="step-head"><span class="step-no">2</span>当期データを取り込む</div>
+
+    <!-- 取り込み方法の切替タブ -->
+    <div class="seg">
+      <button type="button" id="csvTabBtn" class="seg-btn active" onclick="switchDataTab('csv')">
+        📄 CSVアップロード
+      </button>
+      <button type="button" id="freeeTabBtn" class="seg-btn" style="display:none;" onclick="switchDataTab('freee')">
+        🔗 freeeから取得
       </button>
     </div>
-    <div id="freeeConnected" style="display:none;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-        <span style="font-size:.85rem;color:#059669;font-weight:700;">✅ freee連携済み</span>
-        <button class="btn" style="font-size:.76rem;padding:4px 12px;background:#fef2f2;color:#dc2626;"
-                onclick="freeeDisconnect()">連携解除</button>
+
+    <!-- CSVパネル -->
+    <div id="csvPanel">
+      <div class="drop-main" id="dropZone"
+           ondragover="onOver(event)" ondragleave="onLeave()" ondrop="onDrop(event)"
+           onclick="document.getElementById('fileInput').click()">
+        <div class="icon">📄</div>
+        <div class="title" id="dropTitle">当期仕訳帳CSVをドロップ、またはクリックして選択</div>
+        <div class="hint">
+          <strong>当期仕訳帳のみ</strong>でOKです（弥生 / freee / MoneyForward）<br>
+          <span style="color:#059669;">✅ 当期首残高は前期データから自動導出されます（別途アップロード不要）</span>
+        </div>
+        <input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none"
+               onchange="addFiles(this.files)">
       </div>
-      <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">対象のfreee事業所を選択</label>
-      <select id="freeeCompanySelect"
-              style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.9rem;background:#fdf9f5;margin-bottom:6px;">
-        <option value="">-- 読み込み中... --</option>
-      </select>
-      <p id="freeeConnNote" style="font-size:.76rem;color:#c05810;margin:0 0 10px;"></p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-        <button class="btn btn-primary" id="freeeCheckBtn" onclick="runFreeeCheck()"
-                style="flex:1;justify-content:center;">
-          freeeから取得してチェック実行
+      <div class="file-list" id="fileList"></div>
+      <div class="guide">
+        <strong>📌 残高CSV（試算表・補助残高）のフォーマット</strong><br>
+        弥生の「残高試算表」「補助残高一覧表」エクスポートをそのままアップロードできます。<br>
+        手入力の場合: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">勘定科目, 補助科目, 期首残高</code>（例: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">普通預金, 永和信用金庫・梅田, 5000000</code>）
+      </div>
+    </div>
+
+    <!-- freeeパネル -->
+    <div id="freeePanel" style="display:none;">
+      <div id="freeeDisconnected" style="display:none;">
+        <p style="font-size:.85rem;color:#374151;margin-bottom:12px;">
+          freeeと連携すると、CSVを書き出さずに仕訳帳を直接取得してチェックできます。
+        </p>
+        <button class="btn btn-primary" onclick="freeeConnect()" style="justify-content:center;">
+          freeeと連携する
         </button>
-        <button class="btn btn-secondary" onclick="freeeConnect()"
-                style="font-size:.82rem;">＋ 事業所を追加連携</button>
       </div>
-      <p style="font-size:.78rem;color:#9a7060;margin-top:0;">
-        ※ 未連携の事業所は「＋ 事業所を追加連携」で1社ずつ認可してください。<br>
-        ※ 前期比較を行うには、上でクライアントを選択（前期データが保存済みのもの）してください。
-      </p>
+      <div id="freeeConnected" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="font-size:.85rem;color:#059669;font-weight:700;">✅ freee連携済み</span>
+          <button class="btn" style="font-size:.76rem;padding:4px 12px;background:#fef2f2;color:#dc2626;"
+                  onclick="freeeDisconnect()">連携解除</button>
+          <button class="btn btn-secondary" style="font-size:.76rem;padding:4px 12px;margin-left:auto;"
+                  onclick="freeeConnect()">＋ 事業所を追加連携</button>
+        </div>
+        <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">対象のfreee事業所を選択</label>
+        <select id="freeeCompanySelect" onchange="updateCheckBtn()"
+                style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.9rem;background:#fdf9f5;margin-bottom:6px;">
+          <option value="">-- 読み込み中... --</option>
+        </select>
+        <p id="freeeConnNote" style="font-size:.76rem;color:#c05810;margin:0;"></p>
+      </div>
     </div>
   </div>
 
+  <!-- ══ STEP 3: チェック実行 ══ -->
   <div class="card">
-    <div class="card-title">📂 当期ファイルをアップロード</div>
+    <div class="step-head"><span class="step-no">3</span>チェックを実行</div>
 
-    <!-- 大きなドロップゾーン -->
-    <div class="drop-main" id="dropZone"
-         ondragover="onOver(event)" ondragleave="onLeave()" ondrop="onDrop(event)"
-         onclick="document.getElementById('fileInput').click()">
-      <div class="icon">📄</div>
-      <div class="title" id="dropTitle">当期仕訳帳CSVをドロップ、またはクリックして選択</div>
-      <div class="hint">
-        <strong>当期仕訳帳のみ</strong>でOKです（弥生 / freee / MoneyForward）<br>
-        <span style="color:#059669;">✅ 当期首残高は前期データから自動導出されます（別途アップロード不要）</span>
-      </div>
-      <input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none"
-             onchange="addFiles(this.files)">
-    </div>
-
-    <!-- 選択済みファイルリスト -->
-    <div class="file-list" id="fileList"></div>
-
-    <!-- 残高CSVガイド -->
-    <div class="guide">
-      <strong>📌 残高CSV（試算表・補助残高）のフォーマット</strong><br>
-      弥生の「残高試算表」「補助残高一覧表」エクスポートをそのままアップロードできます。<br>
-      手入力の場合: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">勘定科目, 補助科目, 期首残高</code>（例: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">普通預金, 永和信用金庫・梅田, 5000000</code>）
-    </div>
-
-    <!-- チェック対象期間 -->
-    <div style="margin-bottom:16px;padding:14px 16px;background:#fdf9f5;border:1.5px solid #f0c090;border-radius:10px;">
-      <div style="font-size:.85rem;font-weight:700;color:#7a3800;margin-bottom:10px;">📅 チェック対象期間</div>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="margin-bottom:14px;padding:12px 14px;background:#fdf9f5;border:1.5px solid #f0c090;border-radius:10px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:.82rem;font-weight:700;color:#7a3800;">📅 対象期間</span>
         <span style="font-size:.85rem;color:#9a7060;">〜</span>
-        <!-- Flatpickr カレンダー入力 -->
-        <div style="position:relative;display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:6px;">
           <input id="checkUntilInput" type="text" readonly placeholder="カレンダーから選択"
-            style="padding:8px 14px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.88rem;
-                   background:#fff;color:#2c1f10;min-width:180px;cursor:pointer;">
+            style="padding:7px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.85rem;
+                   background:#fff;color:#2c1f10;min-width:160px;cursor:pointer;">
           <span style="font-size:1.1rem;cursor:pointer;" onclick="document.getElementById('checkUntilInput')._flatpickr?.open()">📆</span>
         </div>
-        <span style="font-size:.85rem;color:#9a7060;">まで対象とする</span>
+        <span style="font-size:.85rem;color:#9a7060;">まで</span>
         <span id="checkUntilLabel" style="font-size:.82rem;color:#9a7060;"></span>
         <button id="clearPeriodBtn" onclick="clearPeriod()"
-                style="font-size:.78rem;color:#c05810;background:none;border:none;cursor:pointer;text-decoration:underline;">
-          リセット
-        </button>
+                style="font-size:.78rem;color:#c05810;background:none;border:none;cursor:pointer;text-decoration:underline;">リセット</button>
       </div>
-      <p style="font-size:.78rem;color:#9a7060;margin-top:8px;">
-        ※ 締め日が20日の場合は「5月20日」のように日付単位で指定できます。未指定の場合は最終入力月まで自動で判定します。
+      <p style="font-size:.76rem;color:#9a7060;margin:8px 0 0;">
+        ※ 締め日が20日の場合は「5月20日」のように日付単位で指定できます。未指定なら最終入力月まで自動判定。
       </p>
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-primary" id="checkBtn" onclick="runCheck()" disabled>
-        チェック実行
+      <button class="btn btn-primary" id="checkBtn" onclick="runCheckAuto()" disabled>
+        ▶ チェック実行
       </button>
       <button class="btn btn-secondary" onclick="runSample()">サンプルで試す</button>
       <button class="btn btn-secondary" onclick="clearFiles()" id="clearBtn" style="display:none">クリア</button>
@@ -857,7 +864,7 @@
 
     if (selectedFiles.length === 0) {
       list.innerHTML = '';
-      btn.disabled = true;
+      updateCheckBtn();
       clr.style.display = 'none';
       zone.classList.remove('has-files');
       ttl.textContent = 'ファイルをまとめてドロップ、またはクリックして選択';
@@ -873,7 +880,7 @@
       </div>
     `).join('');
 
-    btn.disabled = false;
+    updateCheckBtn();
     clr.style.display = 'inline-block';
     zone.classList.add('has-files');
     ttl.textContent = `✅ ${selectedFiles.length}ファイル選択済み（クリックで追加）`;
@@ -921,12 +928,40 @@
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
 
+  // ── データ取り込みタブ（CSV / freee）の切替 ──
+  let dataTab = 'csv';
+  function switchDataTab(tab) {
+    dataTab = tab;
+    document.getElementById('csvTabBtn').classList.toggle('active', tab === 'csv');
+    document.getElementById('freeeTabBtn').classList.toggle('active', tab === 'freee');
+    document.getElementById('csvPanel').style.display   = tab === 'csv'   ? 'block' : 'none';
+    document.getElementById('freeePanel').style.display = tab === 'freee' ? 'block' : 'none';
+    updateCheckBtn();
+  }
+
+  // 実行ボタンの有効/無効を、選択中のタブと入力状況に応じて更新
+  function updateCheckBtn() {
+    const btn = document.getElementById('checkBtn');
+    if (!btn) return;
+    if (dataTab === 'freee') {
+      btn.disabled = !document.getElementById('freeeCompanySelect')?.value;
+    } else {
+      btn.disabled = selectedFiles.length === 0;
+    }
+  }
+
+  // 選択中のタブに応じてCSV/freeeのチェックを実行
+  function runCheckAuto() {
+    if (dataTab === 'freee') runFreeeCheck();
+    else runCheck();
+  }
+
   // ── freee 連携 ──
   async function initFreee() {
     try {
       const s = await fetchJSON('/api/freee/status');
-      if (!s.configured) return;                 // 未設定ならカード自体を出さない
-      document.getElementById('freeeCard').style.display = 'block';
+      if (!s.configured) return;                 // 未設定ならfreeeタブを出さない
+      document.getElementById('freeeTabBtn').style.display = 'inline-flex';
       if (s.connected) {
         document.getElementById('freeeConnected').style.display = 'block';
         document.getElementById('freeeDisconnected').style.display = 'none';
