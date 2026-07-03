@@ -208,10 +208,10 @@
 
   <!-- ══ STEP 1: クライアント選択（任意） ══ -->
   <div class="card" id="clientCard">
-    <div class="step-head"><span class="step-no">1</span>クライアントを選ぶ<span class="opt-tag">任意</span></div>
+    <div class="step-head"><span class="step-no">1</span>クライアントを選ぶ</div>
     <p class="step-note">
-      前期比較（前年比）やチェック設定を使う場合に選択します。<br>
-      freee連携や当期データだけのチェックは、選択せず②へ進めます。
+      <strong>CSVアップロードの場合：</strong>選択してください（保存済みの前期データから期首残高・前年比較・チェック設定を使います）。<br>
+      <strong>freeeから取得の場合：</strong>選択不要で②へ進めます（期首残高はfreeeから自動取得。前年比較を行うときのみ選択）。
     </p>
 
     <div class="client-row">
@@ -922,6 +922,15 @@
   // ── チェック実行 ──
   async function runCheck() {
     if (selectedFiles.length === 0) return alert('ファイルを選択してください');
+    // CSVの場合、クライアント未選択だと期首残高・前年比較・チェック設定が使われない
+    if (!currentClient) {
+      const ok = confirm(
+        'クライアントが選択されていません。\n' +
+        '保存済みの前期データ（期首残高・前年比較・チェック設定）を使わずに実行しますか？\n\n' +
+        '※ 通常は ①でクライアントを選択してから実行してください。'
+      );
+      if (!ok) return;
+    }
     const fd = new FormData();
     for (const f of selectedFiles) fd.append('files', f.file);
     if (currentClient) fd.append('client_name', currentClient);
