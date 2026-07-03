@@ -314,6 +314,7 @@ async def freee_status(_: None = Depends(require_auth)):
     return JSONResponse({
         "configured": freee_client.is_configured(),
         "connected":  freee_token_store.is_connected(),
+        "connected_company_ids": freee_token_store.connected_company_ids(),
     })
 
 
@@ -352,15 +353,20 @@ async def freee_disconnect(_: None = Depends(require_auth)):
 
 @app.get("/api/freee/companies")
 async def freee_companies(_: None = Depends(require_auth)):
-    """アクセス可能なfreee事業所一覧を返す。"""
+    """アクセス可能なfreee事業所一覧を返す（連携済みフラグ付き）。"""
     try:
-        token = freee_token_store.get_valid_access_token()
+        token = freee_token_store.get_any_access_token()
         companies = freee_client.list_companies(token)
     except Exception as e:
         raise HTTPException(400, str(e))
+    connected = set(freee_token_store.connected_company_ids())
     return JSONResponse({
         "companies": [
-            {"id": c["id"], "name": c.get("display_name") or c.get("name") or str(c["id"])}
+            {
+                "id": c["id"],
+                "name": c.get("display_name") or c.get("name") or str(c["id"]),
+                "connected": c["id"] in connected,
+            }
             for c in companies
         ]
     })
@@ -377,7 +383,7 @@ async def freee_check(
 ):
     """freeeから当期仕訳帳＋期首残高を取得してチェックを実行する。"""
     try:
-        token = freee_token_store.get_valid_access_token()
+        token = freee_token_store.get_valid_access_token(company_id)
         journal_csv = freee_client.get_journal_csv(
             token, company_id, start_date=start_date, end_date=end_date
         )

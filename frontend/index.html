@@ -347,14 +347,20 @@
       </div>
       <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">対象のfreee事業所を選択</label>
       <select id="freeeCompanySelect"
-              style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.9rem;background:#fdf9f5;margin-bottom:12px;">
+              style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.9rem;background:#fdf9f5;margin-bottom:6px;">
         <option value="">-- 読み込み中... --</option>
       </select>
-      <button class="btn btn-primary" id="freeeCheckBtn" onclick="runFreeeCheck()"
-              style="width:100%;justify-content:center;">
-        freeeから取得してチェック実行
-      </button>
-      <p style="font-size:.78rem;color:#9a7060;margin-top:8px;">
+      <p id="freeeConnNote" style="font-size:.76rem;color:#c05810;margin:0 0 10px;"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <button class="btn btn-primary" id="freeeCheckBtn" onclick="runFreeeCheck()"
+                style="flex:1;justify-content:center;">
+          freeeから取得してチェック実行
+        </button>
+        <button class="btn btn-secondary" onclick="freeeConnect()"
+                style="font-size:.82rem;">＋ 事業所を追加連携</button>
+      </div>
+      <p style="font-size:.78rem;color:#9a7060;margin-top:0;">
+        ※ 未連携の事業所は「＋ 事業所を追加連携」で1社ずつ認可してください。<br>
         ※ 前期比較を行うには、上でクライアントを選択（前期データが保存済みのもの）してください。
       </p>
     </div>
@@ -948,8 +954,15 @@
     const sel = document.getElementById('freeeCompanySelect');
     try {
       const data = await fetchJSON('/api/freee/companies');
-      sel.innerHTML = '<option value="">-- 事業所を選択 --</option>' +
-        data.companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+      // 連携済みを先頭に、未連携は「(未連携)」表示
+      const opts = data.companies.map(c =>
+        `<option value="${c.id}">${c.connected ? '✅ ' : ''}${c.name}${c.connected ? '' : '（未連携）'}</option>`
+      ).join('');
+      sel.innerHTML = '<option value="">-- 事業所を選択 --</option>' + opts;
+      const n = data.companies.filter(c => c.connected).length;
+      const note = document.getElementById('freeeConnNote');
+      if (note) note.textContent =
+        `連携済み ${n}社。未連携の事業所は「freeeと連携する」で1社ずつ追加してください。`;
     } catch(e) {
       sel.innerHTML = '<option value="">取得失敗（再連携が必要かもしれません）</option>';
     }

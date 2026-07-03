@@ -40,15 +40,15 @@ def is_configured() -> bool:
 # ── OAuth ────────────────────────────────────────────────
 def build_authorize_url(state: str = "") -> str:
     """freee認可画面のURLを生成する。
-    FREEE_ALL_COMPANIES=1 のときは全事業所認可（prompt=select_companyを省く。非推奨方式）。
-    既定では freee推奨の select_company（事業所を選んで認可）を使う。"""
+    freee推奨の select_company（事業所を選んで認可）を使う。1事業所ずつ確実に連携でき、
+    未公開アプリでも通る。全事業所一括認可(prompt省略)は非推奨で未公開アプリでは通らない
+    ため使用しない。"""
     params = {
         "client_id": FREEE_CLIENT_ID,
         "redirect_uri": FREEE_REDIRECT_URI,
         "response_type": "code",
+        "prompt": "select_company",
     }
-    if os.environ.get("FREEE_ALL_COMPANIES", "") != "1":
-        params["prompt"] = "select_company"
     if state:
         params["state"] = state
     q = "&".join(f"{k}={requests.utils.quote(str(v), safe='')}" for k, v in params.items())
