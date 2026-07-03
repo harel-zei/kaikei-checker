@@ -18,5 +18,10 @@ services:
         value: kaikei-client-data
       - key: SUPABASE_SECRET_KEY
         sync: false            # ← 機密キー。Renderダッシュボードで値を設定（gitには出さない）
+      # ── AI選別層（任意）── 未設定なら従来どおりルールのみで動作
+      - key: ANTHROPIC_API_KEY
+        sync: false            # ← Anthropic APIキー。設定するとAI選別が有効化
+      - key: AI_MODEL
+        value: claude-opus-4-8 # ← コスト優先なら claude-haiku-4-5 に変更可
     # 注: 無料プランは永続ディスク非対応のため disk 設定は廃止。
     #     クライアントデータは Supabase ストレージに保存する。

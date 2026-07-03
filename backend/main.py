@@ -543,6 +543,19 @@ async def _run_checks(
     if prior_df is not None:
         issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month, ob or None))
 
+    # ── AI選別層（PoC）── 重複仕訳などの感覚的判断をClaudeで選別
+    # ANTHROPIC_API_KEY 未設定時はそのまま通す（フェイルオープン）
+    try:
+        import ai_reviewer
+        if ai_reviewer.is_enabled():
+            before = len(issues)
+            issues = ai_reviewer.review_issues(issues)
+            c.setdefault("log", []).append(
+                f"🤖 AI選別: 重複仕訳などを精査（{before}件→{len(issues)}件）"
+            )
+    except Exception as e:
+        print(f"[ai_reviewer] 呼び出し失敗: {e}", flush=True)
+
     valid_dates = df["date"].dropna()
     sw_labels = {
         "yayoi_raw": "弥生会計", "yayoi": "弥生会計",

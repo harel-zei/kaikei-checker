@@ -200,6 +200,14 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
             "check_id": "5-2", "account": account,
             "month": str(rows[0]["date"].to_period("M")),
             "slip": "、".join(slips[:6]),
+            # AI選別用の最小限データ（顧問先名などの識別情報は含めない）
+            "detail": {
+                "amount": float(amount),
+                "count": len(component),
+                "account": account,
+                "dates": [str(r["date"].date()) for r in rows],
+                "descriptions": descs[:6],
+            },
             "message": (
                 f"【5-2・高】重複仕訳の可能性があります: "
                 f"同額（{amount:,.0f}円）・同科目（{account}）の仕訳が "
