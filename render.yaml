@@ -23,5 +23,12 @@ services:
         sync: false            # ← Anthropic APIキー。設定するとAI選別が有効化
       - key: AI_MODEL
         value: claude-opus-4-8 # ← コスト優先なら claude-haiku-4-5 に変更可
+      # ── freee API連携（任意）── 未設定ならfreeeタブ非表示（CSVのみで動作）
+      - key: FREEE_CLIENT_ID
+        sync: false            # ← freeeアプリ管理画面の Client ID
+      - key: FREEE_CLIENT_SECRET
+        sync: false            # ← 同 Client Secret（機密）
+      - key: FREEE_REDIRECT_URI
+        value: https://kaikei-checker.onrender.com/api/freee/callback
     # 注: 無料プランは永続ディスク非対応のため disk 設定は廃止。
     #     クライアントデータは Supabase ストレージに保存する。

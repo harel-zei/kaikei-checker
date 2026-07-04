@@ -64,11 +64,10 @@ def exchange_code(code: str) -> dict:
         "code": code,
         "redirect_uri": FREEE_REDIRECT_URI,
     }
-    print(f"[freee exchange] code={code[:8]}... client_id={FREEE_CLIENT_ID} "
-          f"redirect_uri={FREEE_REDIRECT_URI} secret_len={len(FREEE_CLIENT_SECRET)}", flush=True)
     r = requests.post(TOKEN_URL, data=payload, timeout=_TIMEOUT)
-    print(f"[freee exchange] status={r.status_code} body={r.text[:300]}", flush=True)
     if r.status_code != 200:
+        # 認可コード等の機微情報はログに出さない
+        print(f"[freee exchange] 失敗 status={r.status_code} body={r.text[:200]}", flush=True)
         raise RuntimeError(f"トークン取得失敗 [{r.status_code}]: {r.text[:300]}")
     return _with_expiry(r.json())
 

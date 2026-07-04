@@ -14,3 +14,7 @@ __pycache__/
 # テストファイル
 backend/test_*.py
 
+
+# サーバーログ・診断ファイル
+server_all.log
+backend/*.log

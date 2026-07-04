@@ -265,11 +265,15 @@ async def check_auto(
     return await _run_pipeline(file_data, client_name, check_until)
 
 
-async def _run_pipeline(file_data, client_name, check_until, ob_direct=None, extra_log=""):
+async def _run_pipeline(file_data, client_name, check_until, ob_direct=None, extra_log="",
+                        software_label=None):
     """ファイル群（(filename, content)のリスト）を自動振り分け→前期補完→チェック実行。
     CSVアップロードとfreee API取得の両方から使う共通処理。
-    ob_direct: freee等から直接取得した期首残高辞書（あれば最優先で使用）。"""
+    ob_direct: freee等から直接取得した期首残高辞書（あれば最優先で使用）。
+    software_label: ソフト名の表示を上書き（freee API取得は汎用CSVのため誤判定される）。"""
     classified = auto_classify_files(file_data)
+    if software_label:
+        classified["software_label"] = software_label
     if ob_direct:
         classified["ob_direct"] = ob_direct
         classified["log"].append(
@@ -400,7 +404,8 @@ async def freee_check(
 
     file_data = [("freee_仕訳帳.csv", journal_csv)]
     return await _run_pipeline(file_data, client_name, check_until,
-                               ob_direct=ob_direct, extra_log=ob_note)
+                               ob_direct=ob_direct, extra_log=ob_note,
+                               software_label="freee（API取得）")
 
 
 # ── 個別指定エンドポイント（従来の6スロット）──────────────────
@@ -536,16 +541,22 @@ async def _run_checks(
     else:
         df_checked = df_current
 
-    try: issues.extend(check_completeness(df_checked, fiscal_cutoff_day))
-    except Exception: pass
-    try: issues.extend(check_tax_detail(df_checked))
-    except Exception: pass
-    try: issues.extend(check_assets(df_checked))
-    except Exception: pass
-    try: issues.extend(check_ar_ap(df_checked))
-    except Exception: pass
-    try: issues.extend(check_governance(df_checked))
-    except Exception: pass
+    # 個別チェッカーの失敗は全体を止めないが、無言で握りつぶさず記録・表示する
+    _checker_jobs = [
+        ("網羅性",       lambda: check_completeness(df_checked, fiscal_cutoff_day)),
+        ("消費税詳細",   lambda: check_tax_detail(df_checked)),
+        ("資産・修繕費", lambda: check_assets(df_checked)),
+        ("債権債務",     lambda: check_ar_ap(df_checked)),
+        ("ガバナンス",   lambda: check_governance(df_checked)),
+    ]
+    for _name, _fn in _checker_jobs:
+        try:
+            issues.extend(_fn())
+        except Exception as e:
+            print(f"[checker] {_name} チェックが失敗: {type(e).__name__}: {e}", flush=True)
+            c.setdefault("log", []).append(
+                f"⚠️ {_name}チェックがエラーで実行できませんでした（他のチェックは実施済み）"
+            )
     if prior_df is not None:
         issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month, ob or None))
 
@@ -581,7 +592,7 @@ async def _run_checks(
             "warning": len([i for i in issues if i["level"] == "warning"]),
             "info":    len([i for i in issues if i["level"] == "info"]),
             "total_entries":     len(df),
-            "software":          sw_labels.get(software, software),
+            "software":          c.get("software_label") or sw_labels.get(software, software),
             "has_ob":            bool(ob),
             "ob_source":         ob_source,
             "ob_accounts":       len(ob),
