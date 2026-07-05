@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hallelujah 会計データチェックシステム</title>
-  <link rel="icon" type="image/png" href="/static/logo.png">
+  <title>会計データチェックシステム｜Harel税理士法人</title>
+  <link rel="icon" type="image/png" href="/static/harel_logo.png">
   <!-- Flatpickr カレンダーライブラリ -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_orange.css">
@@ -32,11 +32,7 @@
       color: #fff; padding: 15px 32px;
       display: flex; align-items: center; gap: 14px;
     }
-    .brand-badge {
-      background: var(--orange); color: #fff;
-      font-size: .7rem; font-weight: 800; letter-spacing: .08em;
-      padding: 4px 12px; border-radius: 6px; flex-shrink: 0;
-    }
+    .header-logo { height: 34px; width: auto; flex-shrink: 0; }
     header h1   { font-size: 1.02rem; font-weight: 700; color: #fff; letter-spacing: .02em; }
     header .sub { margin-left: auto; font-size: .73rem; color: #b9a68f; letter-spacing: .02em; }
     @media (max-width: 640px) { header .sub { display: none; } }
@@ -209,7 +205,7 @@
 <body>
 
 <header>
-  <span class="brand-badge">HALLELUJAH</span>
+  <img src="/static/harel_logo.png" alt="Harel税理士法人" class="header-logo">
   <h1>会計データチェックシステム</h1>
   <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
 </header>
