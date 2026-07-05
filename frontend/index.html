@@ -9,32 +9,37 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_orange.css">
   <style>
-    /* ══ Pattern C: ソフトアンバー ══ */
+    /* ══ HAREL テラコッタ（月次レポートデモ準拠） ══ */
     :root {
-      --orange:      #f47a20;
-      --orange-dark: #d4620a;
-      --orange-light:#ffa040;
-      --orange-pale: #fef5ed;
-      --orange-muted:#f0a060;
-      --bg:          #f8f4ef;
-      --text:        #2c1f10;
-      --text-muted:  #9a7860;
-      --border:      #e8d5c0;
+      --orange:      #dd7a48;
+      --orange-dark: #c4602f;
+      --orange-light:#eda678;
+      --orange-pale: #faf0e7;
+      --orange-muted:#e5a97f;
+      --ink:         #221a13;
+      --bg:          #f7f1e8;
+      --card-border: #ede2d2;
+      --text:        #38291b;
+      --text-muted:  #9d8570;
+      --border:      #e6d8c6;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: "Hiragino Sans", "Meiryo", sans-serif; background: var(--bg); color: var(--text); }
 
     header {
-      background: white;
-      border-bottom: 3px solid var(--orange);
-      color: var(--text); padding: 16px 32px;
+      background: var(--ink);
+      color: #fff; padding: 15px 32px;
       display: flex; align-items: center; gap: 14px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
-    .header-logo-img { height: 52px; width: auto; flex-shrink: 0; }
-    header h1   { font-size: 1.35rem; font-weight: 800; color: var(--text); }
-    header .sub { font-size: 0.82rem; color: var(--text-muted); margin-top: 2px; }
+    .brand-badge {
+      background: var(--orange); color: #fff;
+      font-size: .7rem; font-weight: 800; letter-spacing: .08em;
+      padding: 4px 12px; border-radius: 6px; flex-shrink: 0;
+    }
+    header h1   { font-size: 1.02rem; font-weight: 700; color: #fff; letter-spacing: .02em; }
+    header .sub { margin-left: auto; font-size: .73rem; color: #b9a68f; letter-spacing: .02em; }
+    @media (max-width: 640px) { header .sub { display: none; } }
 
     /* ステップ見出し */
     .step-head { display:flex; align-items:center; gap:10px; font-size:1.02rem; font-weight:700; color:var(--text); margin-bottom:14px; }
@@ -50,7 +55,8 @@
 
     .card {
       background: white; border-radius: 14px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 2px 10px rgba(80,55,30,0.05);
       padding: 24px 28px; margin-bottom: 20px;
     }
     .card-title {
@@ -112,24 +118,29 @@
     .log-box.show { display: block; }
 
     /* ボタン */
-    .btn { padding: 10px 26px; border-radius: 9px; font-size: 0.93rem; font-weight: 700; cursor: pointer; border: none; transition: all 0.15s; }
-    .btn-primary   { background: var(--orange); color: white; box-shadow: 0 2px 8px rgba(244,122,32,.3); }
+    .btn { padding: 11px 28px; border-radius: 999px; font-size: 0.92rem; font-weight: 700; cursor: pointer; border: none; transition: all 0.15s; }
+    .btn-primary   { background: var(--orange); color: white; box-shadow: 0 3px 10px rgba(221,122,72,.35); }
     .btn-primary:hover    { background: var(--orange-dark); }
-    .btn-primary:disabled { background: #f0c090; cursor: not-allowed; box-shadow: none; }
-    .btn-secondary { background: white; color: var(--orange); border: 1.5px solid var(--orange); }
+    .btn-primary:disabled { background: #ecd2bc; cursor: not-allowed; box-shadow: none; }
+    .btn-secondary { background: white; color: var(--orange-dark); border: 1.5px solid var(--orange-muted); }
     .btn-secondary:hover  { background: var(--orange-pale); }
     .btn-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 
-    /* サマリー */
-    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
-    .sc { background: white; border-radius: 12px; padding: 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-    .sc .n   { font-size: 2.2rem; font-weight: 800; line-height: 1; }
-    .sc .lbl { font-size: 0.8rem; color: var(--text-muted); margin-top: 5px; }
-    .c-err .n { color: #dc2626; } .c-wrn .n { color: #d97706; }
+    /* サマリー（上端アクセントのKPIカード） */
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .sc {
+      background: white; border-radius: 10px; padding: 16px 18px; text-align: left;
+      border: 1px solid var(--card-border); border-top: 3px solid var(--orange);
+      box-shadow: 0 2px 8px rgba(80,55,30,0.05);
+    }
+    .sc .n   { font-size: 2.1rem; font-weight: 800; line-height: 1.1; }
+    .sc .lbl { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; }
+    .c-err { border-top-color: #c94f3d; } .c-err .n { color: #c94f3d; }
+    .c-wrn { border-top-color: #d9962f; } .c-wrn .n { color: #b97a1a; }
     .c-inf .n { color: var(--orange); }
-    .c-tot { background: linear-gradient(135deg, var(--orange), var(--orange-light)); }
-    .c-tot .n   { color: white; }
-    .c-tot .lbl { color: rgba(255,255,255,0.85); }
+    .c-tot { background: var(--ink); border-color: var(--ink); border-top-color: var(--orange); }
+    .c-tot .n   { color: #fff; }
+    .c-tot .lbl { color: #b9a68f; }
 
     /* フィルタ */
     .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -187,21 +198,20 @@
     .saved-file-row .del-btn:hover { color: #dc2626; border-color: #fecaca; }
 
     .loading { text-align: center; padding: 48px; display: none; }
-    .spinner { width: 44px; height: 44px; border: 4px solid #e5e7eb; border-top-color: #1a56db; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
+    .spinner { width: 44px; height: 44px; border: 4px solid #ece2d4; border-top-color: var(--orange); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .empty { text-align: center; padding: 52px 32px; color: #9ca3af; }
     .empty .icon { font-size: 3.5rem; margin-bottom: 12px; }
     #results { display: none; }
-    .count-badge { background: #1a56db; color: white; border-radius: 12px; padding: 1px 9px; font-size: 0.78rem; font-weight: 700; margin-left: 6px; }
+    .count-badge { background: var(--ink); color: white; border-radius: 12px; padding: 1px 9px; font-size: 0.78rem; font-weight: 700; margin-left: 6px; }
   </style>
 </head>
 <body>
 
 <header>
-  <img src="/static/logo.png" alt="Hallelujah 会計データチェックシステム" class="header-logo-img">
-  <div>
-    <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
-  </div>
+  <span class="brand-badge">HALLELUJAH</span>
+  <h1>会計データチェックシステム</h1>
+  <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
 </header>
 
 <div class="container">
