@@ -13,6 +13,7 @@ from parsers.csv_parser import parse_csv
 from checkers.bs_checker import check_bs
 from checkers.pl_checker import check_pl
 from checkers.tax_checker import check_tax
+from reports.monthly_report import build_monthly_report
 
 app = FastAPI(title="会計データチェックシステム", version="1.0.0")
 
@@ -78,6 +79,7 @@ async def check_accounting_data(file: UploadFile = File(...)):
     return JSONResponse({
         "summary": summary,
         "issues": all_issues,
+        "monthly_report": build_monthly_report(df),
     })
 
 
@@ -123,7 +125,11 @@ async def get_sample_data():
         }
     }
 
-    return JSONResponse({"summary": summary, "issues": all_issues})
+    return JSONResponse({
+        "summary": summary,
+        "issues": all_issues,
+        "monthly_report": build_monthly_report(df),
+    })
 
 
 if __name__ == "__main__":

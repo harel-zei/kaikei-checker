@@ -178,6 +178,62 @@
     }
     .empty-state .icon { font-size: 4rem; margin-bottom: 16px; }
 
+    /* 月次レポート */
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #1e429f;
+      margin: 32px 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .report-card {
+      background: white;
+      border-radius: 10px;
+      padding: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+    table.report-table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    table.report-table th, table.report-table td {
+      padding: 8px 12px;
+      text-align: right;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    table.report-table thead th {
+      background: #f8fafc;
+      color: #6b7280;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+    }
+    table.report-table th.label-col, table.report-table td.label-col {
+      text-align: left;
+      position: sticky;
+      left: 0;
+      background: white;
+      font-weight: 500;
+      color: #374151;
+    }
+    table.report-table thead th.label-col { background: #f8fafc; }
+    table.report-table tr.row-expense td.label-col { color: #6b7280; font-weight: 400; padding-left: 24px; }
+    table.report-table tr.row-subtotal td { font-weight: 700; background: #f0f9ff; }
+    table.report-table tr.row-subtotal td.label-col { background: #f0f9ff; color: #1e429f; }
+    table.report-table tr.row-profit td { font-weight: 700; background: #f0fdf4; }
+    table.report-table tr.row-profit td.label-col { background: #f0fdf4; color: #166534; }
+    table.report-table td.total-col, table.report-table th.total-col {
+      border-left: 2px solid #e5e7eb;
+      font-weight: 600;
+    }
+    table.report-table td.neg { color: #dc2626; }
+
     #results { display: none; }
   </style>
 </head>
@@ -217,6 +273,11 @@
 
     <div class="summary-grid" id="summaryGrid"></div>
 
+    <!-- 月次レポート -->
+    <div class="section-title">📈 月次レポート（損益推移）</div>
+    <div class="report-card" id="reportCard"></div>
+
+    <div class="section-title">🔍 チェック結果</div>
     <div class="filter-tabs" id="filterTabs"></div>
 
     <div class="issue-list" id="issueList"></div>
@@ -303,6 +364,9 @@
       </div>
     `;
 
+    // 月次レポート
+    renderMonthlyReport(data.monthly_report);
+
     // フィルタータブ
     document.getElementById('filterTabs').innerHTML = `
       <div class="tab all active" onclick="filterIssues('all', this)">すべて</div>
@@ -316,6 +380,62 @@
     renderIssues(issues);
 
     document.getElementById('results').style.display = 'block';
+  }
+
+  function renderMonthlyReport(report) {
+    const card = document.getElementById('reportCard');
+
+    if (!report || !report.months || report.months.length === 0) {
+      card.innerHTML = `<div class="empty-state" style="padding:32px;">
+        <div class="icon">📭</div>
+        <p>月次レポートを作成できるデータがありませんでした</p>
+      </div>`;
+      return;
+    }
+
+    const months = report.months;
+
+    // 月ヘッダー（YYYY-MM → MM月 表記）
+    const monthLabel = m => {
+      const parts = m.split('-');
+      return parts.length === 2 ? `${parseInt(parts[1], 10)}月` : m;
+    };
+
+    const cell = v => {
+      const neg = v < 0;
+      return `<td class="${neg ? 'neg' : ''}">${Math.round(v).toLocaleString()}</td>`;
+    };
+    const totalCell = v => {
+      const neg = v < 0;
+      return `<td class="total-col ${neg ? 'neg' : ''}">${Math.round(v).toLocaleString()}</td>`;
+    };
+
+    const dataRow = (label, obj, cls) => {
+      const cells = months.map(m => cell(obj.values[m] || 0)).join('');
+      return `<tr class="${cls || ''}">
+        <td class="label-col">${label}</td>${cells}${totalCell(obj.total)}
+      </tr>`;
+    };
+
+    let html = `<table class="report-table"><thead><tr>
+      <th class="label-col">科目</th>
+      ${months.map(m => `<th>${monthLabel(m)}</th>`).join('')}
+      <th class="total-col">年計</th>
+    </tr></thead><tbody>`;
+
+    html += dataRow('売上高', report.sales);
+    html += dataRow('売上原価', report.cogs);
+    html += dataRow('売上総利益', report.gross_profit, 'row-subtotal');
+
+    // 販管費（科目別）
+    for (const exp of report.expenses) {
+      html += dataRow(exp.account, exp, 'row-expense');
+    }
+    html += dataRow('販管費 計', report.expense_total, 'row-subtotal');
+    html += dataRow('営業利益', report.operating_profit, 'row-profit');
+
+    html += `</tbody></table>`;
+    card.innerHTML = html;
   }
 
   function renderIssues(issues) {
