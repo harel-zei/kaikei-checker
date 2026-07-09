@@ -30,14 +30,14 @@ def build_checksheet_xlsx(
     buf = io.BytesIO()
     wb  = xlsxwriter.Workbook(buf, {"in_memory": True})
 
-    _build_checksheet(wb, issues, period)
+    _build_checksheet(wb, issues, period, client_name)
     _build_sample_sheet(wb)
 
     wb.close()
     return buf.getvalue()
 
 
-def _build_checksheet(wb, issues, period):
+def _build_checksheet(wb, issues, period, client_name=""):
     ws = wb.add_worksheet("チェックシート")
 
     # ── フォーマット ──
@@ -108,10 +108,11 @@ def _build_checksheet(wb, issues, period):
     # ── Row1: タイトル ──
     ws.merge_range("A1:H1", "会計データ確認シート", fmt_title)
 
-    # ── Row2: 対象月 ──
-    period_val = period or "　　　　年　　　月分"
+    # ── Row2: 会社名・対象月 ──
+    period_val  = period or "　　　　年　　　月分"
+    company_val = client_name or "　　　　　　　　　　"
     ws.merge_range("A2:H2",
-        f"対象月：{period_val}　　　　　　　　　　　　　　担当：　　　　　　　",
+        f"会社名：{company_val}　　　対象月：{period_val}　　　担当：　　　　　　　",
         fmt_period)
 
     # ── Row3: 操作方法 ──
