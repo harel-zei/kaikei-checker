@@ -131,6 +131,13 @@ async def root(_: None = Depends(require_auth)):
     return (frontend_path / "index.html").read_text(encoding="utf-8")
 
 
+@app.get("/healthz")
+async def healthz():
+    """認証不要の死活監視用エンドポイント。
+    UptimeRobot 等から定期的に叩き、Render無料プランのスリープを防ぐ。"""
+    return {"status": "ok"}
+
+
 # ═══════════════════════════════════════════════════
 # クライアント管理 API
 # ═══════════════════════════════════════════════════
