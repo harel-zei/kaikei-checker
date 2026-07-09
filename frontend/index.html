@@ -900,22 +900,65 @@
     addFiles(e.dataTransfer.files);
   }
 
-  // ── JSONレスポンス取得ヘルパー（HTML返却時に分かりやすいエラーを出す） ──
-  async function fetchJSON(url, options) {
-    const res = await fetch(url, options);
-    const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (_) {
-      // サーバーがHTMLを返した場合（Renderスリープ明け等）
-      if (res.status === 503 || res.status === 502) {
-        throw new Error('サーバーが起動中です（Renderのスリープ解除に30〜60秒かかります）。しばらく待ってから再実行してください。');
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // ── JSONレスポンス取得ヘルパー ──
+  // opts.warmup=true のとき、Renderのスリープ解除（502/503や接続失敗）を
+  // 自動でリトライして待つ。待機中は onWait でメッセージを更新する。
+  async function fetchJSON(url, options, opts = {}) {
+    const { warmup = false, onWait = null, maxWaitMs = 90000, intervalMs = 3000 } = opts;
+    const deadline = Date.now() + maxWaitMs;
+    let waited = false;
+
+    while (true) {
+      let res, text;
+      try {
+        res = await fetch(url, options);
+        text = await res.text();
+      } catch (netErr) {
+        // 起動途中は接続拒否になることがある → 待ってリトライ
+        if (warmup && Date.now() < deadline) {
+          waited = true; if (onWait) onWait();
+          await sleep(intervalMs); continue;
+        }
+        throw new Error('サーバーに接続できませんでした。時間をおいて再実行してください。');
       }
-      throw new Error(`サーバーエラー (${res.status})。しばらく待ってから再実行してください。`);
+
+      // コールドスタート中は 502/503 が返る → 待ってリトライ
+      if ((res.status === 502 || res.status === 503) && warmup && Date.now() < deadline) {
+        waited = true; if (onWait) onWait();
+        await sleep(intervalMs); continue;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        if (res.status === 503 || res.status === 502) {
+          throw new Error('サーバーの起動に時間がかかっています。もう一度お試しください。');
+        }
+        throw new Error(`サーバーエラー (${res.status})。しばらく待ってから再実行してください。`);
+      }
+      if (!res.ok) throw new Error(data.detail || `エラー (${res.status})`);
+      if (waited && onWait) onWait(true);   // 起動完了を通知
+      return data;
     }
-    if (!res.ok) throw new Error(data.detail || `エラー (${res.status})`);
-    return data;
+  }
+
+  // ローディング中のメッセージ切替
+  function setLoadingMsg(text) {
+    const p = document.querySelector('#loading p');
+    if (p) p.textContent = text;
+  }
+  // warmup用の共通オプション（起動待ちメッセージを出す）
+  function warmupOpts() {
+    let shown = false;
+    return { warmup: true, onWait: (done) => {
+      if (done) { setLoadingMsg('ファイルを解析・チェック中...'); return; }
+      if (!shown) { shown = true;
+        setLoadingMsg('サーバーを起動しています… そのままお待ちください（初回は30〜60秒かかります）');
+      }
+    }};
   }
 
   // ── チェック実行 ──
@@ -937,7 +980,7 @@
     if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
-      const data = await fetchJSON('/api/check-auto', { method: 'POST', body: fd });
+      const data = await fetchJSON('/api/check-auto', { method: 'POST', body: fd }, warmupOpts());
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
@@ -1027,7 +1070,7 @@
     if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
-      const data = await fetchJSON('/api/freee/check', { method: 'POST', body: fd });
+      const data = await fetchJSON('/api/freee/check', { method: 'POST', body: fd }, warmupOpts());
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
@@ -1035,7 +1078,7 @@
   async function runSample() {
     showLoading();
     try {
-      const data = await fetchJSON('/api/sample');
+      const data = await fetchJSON('/api/sample', undefined, warmupOpts());
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
