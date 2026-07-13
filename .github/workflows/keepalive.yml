@@ -1,0 +1,25 @@
+name: keepalive
+
+# Render無料プランのスリープ（15分無アクセスで停止）を防ぐため、
+# 公開エンドポイント /healthz を定期的に叩いて起こしておく。
+# 公開リポジトリのためGitHub Actionsの実行時間は無料。
+# 注: スケジュール実行はデフォルトブランチ(main)上のワークフローのみ動作する。
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # 10分ごと（GitHubの遅延を見込んでも15分スリープに間に合う）
+  workflow_dispatch:          # 手動実行も可能
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping healthz
+        run: |
+          for i in 1 2 3; do
+            if curl -fsS --max-time 90 https://kaikei-checker.onrender.com/healthz; then
+              echo "  -> ok (attempt $i)"; exit 0
+            fi
+            echo "retry in 15s..."; sleep 15
+          done
+          echo "healthz unreachable"; exit 1
