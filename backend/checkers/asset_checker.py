@@ -1,0 +1,179 @@
+﻿"""
+カテゴリ3: 資産・修繕費の判定チェック
+3-1: 中小企業特例（少額資産）の適用漏れ（10万〜30万）
+3-2: 10万円未満の資産計上（費用化漏れ）
+3-3: 修繕費の資産計上漏れ（20万円以上）
+"""
+import pandas as pd
+from typing import List, Dict, Any
+from checkers.check_utils import desc_safe, month_safe, date_safe, slip_safe
+
+# 固定資産科目
+FIXED_ASSET_ACCOUNTS = [
+    "工具器具備品", "機械装置", "車両運搬具", "建物", "構築物",
+    "建設仮勘定", "土地", "リース資産", "ソフトウェア",
+    "無形固定資産",
+]
+
+# 固定資産科目に部分一致するが実際はPL科目（除外対象）
+FIXED_ASSET_EXCLUDE = [
+    "ソフトウェア使用費", "ソフトウェア償却費", "ソフトウェア償却",
+    "建物管理費", "建物清掃費",
+]
+
+# 修繕費科目
+REPAIR_ACCOUNTS = ["修繕費"]
+
+THRESHOLD_EXPENSE  = 100_000   # 10万円未満 → 費用化すべき
+THRESHOLD_SME_MAX  = 300_000   # 30万円未満 → 中小特例（少額減価償却資産）
+THRESHOLD_REPAIR   = 200_000   # 20万円以上 → 資産計上の可能性
+
+
+def check_assets(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    issues = []
+    issues.extend(_check_3_1_sme_deduction(df))
+    issues.extend(_check_3_2_under_threshold(df))
+    issues.extend(_check_3_3_repair_capitalization(df))
+    return issues
+
+
+# ──────────────────────────────────────────────────────────
+# 3-1: 中小企業特例（少額資産）の適用漏れ（10万〜30万）
+# ──────────────────────────────────────────────────────────
+def _check_3_1_sme_deduction(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    固定資産科目に 10万〜30万の計上がある場合、
+    中小企業特例による即時費用化の可能性をアラート
+    """
+    issues = []
+    acc_mask = df["debit_account"].fillna("").astype(str).apply(
+        lambda x: bool(x)
+                  and any(a in x for a in FIXED_ASSET_ACCOUNTS)
+                  and not any(e in x for e in FIXED_ASSET_EXCLUDE)
+    )
+    asset_entries = df[acc_mask].copy()
+    if asset_entries.empty:
+        return issues
+
+    # 同一伝票内の合算金額で判定
+    if "slip_no" in df.columns:
+        slip_totals = asset_entries.groupby(
+            [asset_entries["date"].dt.to_period("M"), "slip_no"]
+        )["debit_amount"].sum()
+        for (period, slip), total in slip_totals.items():
+            if THRESHOLD_EXPENSE <= total < THRESHOLD_SME_MAX:
+                sample = asset_entries[asset_entries["slip_no"] == str(slip)].iloc[0]
+                issues.append({
+                    "level": "warning", "category": "3-1 少額資産特例",
+                    "check_id": "3-1", "account": str(sample["debit_account"]),
+                    "month": str(period), "slip": str(slip),
+                    "message": (
+                        f"【3-1・中】伝票No.{slip}の固定資産計上額が {total:,.0f}円（10万〜30万）です。"
+                        "中小企業の少額減価償却資産の特例（年間300万円まで即時損金算入）の"
+                        "適用を検討してください。"
+                    ),
+                })
+    else:
+        # 伝票番号なし→単行判定
+        target = asset_entries[
+            (asset_entries["debit_amount"] >= THRESHOLD_EXPENSE) &
+            (asset_entries["debit_amount"] < THRESHOLD_SME_MAX)
+        ]
+        for _, row in target.iterrows():
+            issues.append({
+                "level": "warning", "category": "3-1 少額資産特例",
+                "check_id": "3-1", "account": str(row["debit_account"]),
+                "month": str(row["date"].to_period("M")) if pd.notna(row["date"]) else "不明",
+                "message": (
+                    f"【3-1・中】固定資産計上額 {row['debit_amount']:,.0f}円 は10万〜30万の範囲です。"
+                    "中小企業特例（少額減価償却資産）による即時費用化を検討してください。"
+                ),
+            })
+    return issues
+
+
+# ──────────────────────────────────────────────────────────
+# 3-2: 10万円未満の資産計上（費用化漏れ）
+# ──────────────────────────────────────────────────────────
+def _check_3_2_under_threshold(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """固定資産科目に10万円未満の計上→消耗品費等で費用化すべき"""
+    issues = []
+    acc_mask = df["debit_account"].fillna("").astype(str).apply(
+        lambda x: bool(x)
+                  and any(a in x for a in FIXED_ASSET_ACCOUNTS)
+                  and not any(e in x for e in FIXED_ASSET_EXCLUDE)
+    )
+    target = df[acc_mask & (df["debit_amount"] > 0) & (df["debit_amount"] < THRESHOLD_EXPENSE)]
+
+    for _, row in target.iterrows():
+        d = desc_safe(row)
+        desc_part = f"（摘要: {d}）" if d else ""
+        issues.append({
+            "level": "error", "category": "3-2 少額資産費用化",
+            "check_id": "3-2", "account": str(row["debit_account"]),
+            "month": date_safe(row), "slip": slip_safe(row),
+            "message": (
+                f"【3-2・高】固定資産科目「{row['debit_account']}」に"
+                f"{row['debit_amount']:,.0f}円（10万円未満）の計上があります{desc_part}。"
+                "10万円未満の物品は消耗品費等で費用処理（損金算入）すべきです。"
+            ),
+        })
+    return issues
+
+
+# ──────────────────────────────────────────────────────────
+# 3-3: 修繕費の資産計上漏れ（20万円以上）
+# ──────────────────────────────────────────────────────────
+def _check_3_3_repair_capitalization(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """修繕費に20万円以上の計上→資本的支出として固定資産計上の可能性。
+    件数が多くなりやすいため、20万円以上を1件にまとめて指摘する。"""
+    issues = []
+    acc_mask = df["debit_account"].fillna("").astype(str).apply(
+        lambda x: isinstance(x, str) and x not in ("nan", "None", "") and any(a in x for a in REPAIR_ACCOUNTS)
+    )
+    repair_entries = df[acc_mask].copy()
+    if repair_entries.empty:
+        return issues
+
+    # 伝票単位で合算（伝票が無ければ行単位）
+    if "slip_no" in df.columns and repair_entries["slip_no"].notna().any():
+        grouped = repair_entries.groupby("slip_no").agg(
+            total=("debit_amount", "sum"),
+            date=("date", "first"),
+        )
+        targets = [
+            {"slip": str(slip), "amount": r["total"], "date": r["date"]}
+            for slip, r in grouped.iterrows() if r["total"] >= THRESHOLD_REPAIR
+        ]
+    else:
+        targets = [
+            {"slip": "", "amount": row["debit_amount"], "date": row["date"]}
+            for _, row in repair_entries.iterrows() if row["debit_amount"] >= THRESHOLD_REPAIR
+        ]
+
+    if not targets:
+        return issues
+
+    targets.sort(key=lambda t: t["amount"], reverse=True)
+    total_amt = sum(t["amount"] for t in targets)
+
+    def _line(t):
+        d = t["date"]
+        ds = f"{d.year}/{d.month}/{d.day}" if pd.notna(d) else "日付不明"
+        slip = f"伝票No.{t['slip']}　" if t["slip"] else ""
+        return f"・{ds}　{slip}{t['amount']:,.0f}円"
+
+    lines = "\n".join(_line(t) for t in targets[:30])
+    suffix = f"\n・ほか{len(targets)-30}件" if len(targets) > 30 else ""
+
+    issues.append({
+        "level": "warning", "category": "3-3 修繕費資本的支出",
+        "check_id": "3-3", "account": "修繕費",
+        "month": "全期間",
+        "message": (
+            f"【3-3・高】20万円以上の修繕費が {len(targets)}件（合計 {total_amt:,.0f}円）あります。"
+            "資本的支出（価値向上・耐用年数延長）に該当するものは固定資産計上が必要です。\n"
+            f"【対象】\n{lines}{suffix}"
+        ),
+    })
+    return issues

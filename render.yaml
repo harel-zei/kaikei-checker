@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: kaikei-checker
+    env: python
+    region: singapore          # 最寄りのリージョン（日本に近い）
+    plan: free                 # 無料プラン（後で有料に変更可）
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: APP_USERNAME
+        value: admin           # ← ログインユーザー名（後で変更可）
+      - key: APP_PASSWORD
+        generateValue: true    # ← Renderが自動でパスワードを生成
+      # ── Supabase ストレージ（前期データの永続保存）──
+      - key: SUPABASE_URL
+        value: https://uwrespfqnbamwpuvrtwc.supabase.co
+      - key: SUPABASE_BUCKET
+        value: kaikei-client-data
+      - key: SUPABASE_SECRET_KEY
+        sync: false            # ← 機密キー。Renderダッシュボードで値を設定（gitには出さない）
+      # ── AI選別層（任意）── 未設定なら従来どおりルールのみで動作
+      - key: ANTHROPIC_API_KEY
+        sync: false            # ← Anthropic APIキー。設定するとAI選別が有効化
+      - key: AI_MODEL
+        value: claude-opus-4-8 # ← コスト優先なら claude-haiku-4-5 に変更可
+      # ── freee API連携（任意）── 未設定ならfreeeタブ非表示（CSVのみで動作）
+      - key: FREEE_CLIENT_ID
+        sync: false            # ← freeeアプリ管理画面の Client ID
+      - key: FREEE_CLIENT_SECRET
+        sync: false            # ← 同 Client Secret（機密）
+      - key: FREEE_REDIRECT_URI
+        value: https://kaikei-checker.onrender.com/api/freee/callback
+    # 注: 無料プランは永続ディスク非対応のため disk 設定は廃止。
+    #     クライアントデータは Supabase ストレージに保存する。

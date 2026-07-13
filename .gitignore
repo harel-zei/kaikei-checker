@@ -1,0 +1,20 @@
+# クライアントデータ（個人情報）
+backend/client_data/*/
+!backend/client_data/.gitkeep
+
+# 環境変数
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# テストファイル
+backend/test_*.py
+
+
+# サーバーログ・診断ファイル
+server_all.log
+backend/*.log

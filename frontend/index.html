@@ -3,356 +3,1273 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>会計データチェックシステム</title>
+  <title>会計データチェックシステム｜Harel税理士法人</title>
+  <link rel="icon" type="image/png" href="/static/harel_logo.png">
+  <!-- Flatpickr カレンダーライブラリ -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_orange.css">
   <style>
+    /* ══ HAREL テラコッタ（月次レポートデモ準拠） ══ */
+    :root {
+      --orange:      #dd7a48;
+      --orange-dark: #c4602f;
+      --orange-light:#eda678;
+      --orange-pale: #faf0e7;
+      --orange-muted:#e5a97f;
+      --ink:         #221a13;
+      --bg:          #f7f1e8;
+      --card-border: #ede2d2;
+      --text:        #38291b;
+      --text-muted:  #9d8570;
+      --border:      #e6d8c6;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: "Hiragino Sans", "Meiryo", sans-serif; background: #f5f7fa; color: #333; }
+    body { font-family: "Hiragino Sans", "Meiryo", sans-serif; background: var(--bg); color: var(--text); }
 
     header {
-      background: linear-gradient(135deg, #1a56db, #1e429f);
-      color: white;
-      padding: 20px 32px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      background: var(--ink);
+      color: #fff; padding: 15px 32px;
+      display: flex; align-items: center; gap: 14px;
     }
-    header h1 { font-size: 1.4rem; font-weight: 700; }
-    header .subtitle { font-size: 0.85rem; opacity: 0.8; margin-top: 2px; }
+    .header-logo { height: 34px; width: auto; flex-shrink: 0; }
+    header h1   { font-size: 1.02rem; font-weight: 700; color: #fff; letter-spacing: .02em; }
+    header .sub { margin-left: auto; font-size: .73rem; color: #b9a68f; letter-spacing: .02em; }
+    @media (max-width: 640px) { header .sub { display: none; } }
 
-    .container { max-width: 960px; margin: 0 auto; padding: 32px 16px; }
+    /* ステップ見出し */
+    .step-head { display:flex; align-items:center; gap:10px; font-size:1.02rem; font-weight:700; color:var(--text); margin-bottom:14px; }
+    .step-no { width:24px; height:24px; border-radius:50%; background:var(--orange); color:#fff; font-size:.82rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .opt-tag { font-size:.72rem; font-weight:700; color:#9a7060; background:#f1efe8; border:1px solid #e0d5c5; border-radius:20px; padding:2px 10px; margin-left:2px; }
+    .step-note { font-size:.8rem; color:#9a7060; line-height:1.6; margin:-6px 0 14px; }
+    /* データ取り込みの切替タブ */
+    .seg { display:inline-flex; background:#fdf3ea; border:1.5px solid #f0c090; border-radius:10px; padding:3px; margin-bottom:14px; gap:3px; }
+    .seg-btn { font-size:.86rem; padding:7px 18px; border-radius:7px; border:none; background:transparent; color:#9a7060; font-weight:600; cursor:pointer; transition:.15s; }
+    .seg-btn.active { background:var(--orange); color:#fff; }
 
-    /* アップロードエリア */
-    .upload-area {
-      background: white;
-      border: 2px dashed #93c5fd;
-      border-radius: 12px;
-      padding: 48px 32px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-bottom: 24px;
-    }
-    .upload-area:hover, .upload-area.dragover {
-      border-color: #1a56db;
-      background: #eff6ff;
-    }
-    .upload-icon { font-size: 3rem; margin-bottom: 12px; }
-    .upload-area h2 { font-size: 1.1rem; color: #1a56db; margin-bottom: 8px; }
-    .upload-area p { font-size: 0.9rem; color: #6b7280; }
-    #fileInput { display: none; }
+    .container { max-width: 860px; margin: 0 auto; padding: 28px 16px; }
 
-    .btn {
-      display: inline-block;
-      padding: 10px 24px;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-      transition: all 0.15s;
+    .card {
+      background: white; border-radius: 14px;
+      border: 1px solid var(--card-border);
+      box-shadow: 0 2px 10px rgba(80,55,30,0.05);
+      padding: 24px 28px; margin-bottom: 20px;
     }
-    .btn-primary { background: #1a56db; color: white; }
-    .btn-primary:hover { background: #1e429f; }
-    .btn-secondary { background: #e5e7eb; color: #374151; margin-left: 8px; }
-    .btn-secondary:hover { background: #d1d5db; }
+    .card-title {
+      font-size: 0.95rem; font-weight: 800; margin-bottom: 16px;
+      color: var(--text); display: flex; align-items: center; gap: 8px;
+    }
+    .card-title::before {
+      content: ''; display: inline-block;
+      width: 4px; height: 18px;
+      background: var(--orange); border-radius: 2px; flex-shrink: 0;
+    }
 
-    /* サマリーカード */
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+    /* ── 大きなドロップゾーン ── */
+    .drop-main {
+      border: 2px dashed var(--orange-muted); border-radius: 12px;
+      padding: 40px 24px; text-align: center; cursor: pointer;
+      transition: all 0.2s; background: #fdf9f5; margin-bottom: 16px;
     }
-    .summary-card {
-      background: white;
-      border-radius: 10px;
-      padding: 20px;
-      text-align: center;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-    }
-    .summary-card .count { font-size: 2.5rem; font-weight: 700; line-height: 1; }
-    .summary-card .label { font-size: 0.85rem; color: #6b7280; margin-top: 6px; }
-    .card-error .count { color: #dc2626; }
-    .card-warning .count { color: #d97706; }
-    .card-info .count { color: #2563eb; }
-    .card-total .count { color: #059669; }
+    .drop-main:hover, .drop-main.over { border-color: var(--orange); background: var(--orange-pale); }
+    .drop-main.has-files { border-color: #059669; background: #f0fdf4; }
+    .drop-main .icon  { font-size: 2.6rem; margin-bottom: 10px; }
+    .drop-main .title { font-size: 1.05rem; font-weight: 700; color: #c05810; margin-bottom: 6px; }
+    .drop-main.has-files .title { color: #059669; }
+    .drop-main .hint  { font-size: 0.85rem; color: var(--text-muted); line-height: 1.7; }
 
-    /* フィルタータブ */
-    .filter-tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
+    /* ファイルリスト */
+    .file-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .file-item {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--orange-pale); border: 1px solid #f0c090;
+      border-radius: 8px; padding: 8px 14px; font-size: 0.85rem;
     }
-    .tab {
-      padding: 6px 16px;
-      border-radius: 20px;
-      font-size: 0.85rem;
-      cursor: pointer;
-      border: 2px solid transparent;
-      font-weight: 500;
-      transition: all 0.15s;
+    .file-item .name   { flex: 1; color: #8a4820; font-weight: 500; }
+    .file-item .badge  { font-size: 0.72rem; padding: 2px 8px; border-radius: 8px; font-weight: 600; white-space: nowrap; }
+    .badge-journal  { background: #fde8d8; color: #7a3800; }
+    .badge-bal-main { background: #dcfce7; color: #166534; }
+    .badge-bal-sub  { background: #fef9c3; color: #854d0e; }
+    .badge-current  { background: #fde8d8; color: #7a3800; }
+    .badge-prior    { background: #fce7f3; color: #9d174d; }
+    .badge-unknown  { background: #f3f4f6; color: #6b7280; }
+    .file-item .remove { cursor: pointer; color: #9ca3af; font-size: 1rem; line-height: 1; }
+    .file-item .remove:hover { color: #dc2626; }
+
+    /* 説明 */
+    .guide {
+      background: var(--orange-pale); border: 1px solid #f0c090;
+      border-radius: 8px; padding: 12px 16px;
+      font-size: 0.82rem; color: #7a3800; line-height: 1.75; margin-bottom: 16px;
     }
-    .tab.all { background: #f3f4f6; color: #374151; }
-    .tab.error { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
-    .tab.warning { background: #fffbeb; color: #d97706; border-color: #fde68a; }
-    .tab.info { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
-    .tab.active { font-weight: 700; border-width: 2px; }
-    .tab.all.active { border-color: #9ca3af; }
+    .guide strong { color: #5a2800; }
+
+    /* 振り分け結果ログ */
+    .log-box {
+      background: var(--orange-pale); border: 1px solid #f0c090;
+      border-radius: 8px; padding: 12px 16px;
+      font-size: 0.8rem; color: #6a3810; line-height: 1.8;
+      margin-bottom: 14px; display: none;
+    }
+    .log-box.show { display: block; }
+
+    /* ボタン */
+    .btn { padding: 11px 28px; border-radius: 999px; font-size: 0.92rem; font-weight: 700; cursor: pointer; border: none; transition: all 0.15s; }
+    .btn-primary   { background: var(--orange); color: white; box-shadow: 0 3px 10px rgba(221,122,72,.35); }
+    .btn-primary:hover    { background: var(--orange-dark); }
+    .btn-primary:disabled { background: #ecd2bc; cursor: not-allowed; box-shadow: none; }
+    .btn-secondary { background: white; color: var(--orange-dark); border: 1.5px solid var(--orange-muted); }
+    .btn-secondary:hover  { background: var(--orange-pale); }
+    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+    /* サマリー（上端アクセントのKPIカード） */
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .sc {
+      background: white; border-radius: 10px; padding: 16px 18px; text-align: left;
+      border: 1px solid var(--card-border); border-top: 3px solid var(--orange);
+      box-shadow: 0 2px 8px rgba(80,55,30,0.05);
+    }
+    .sc .n   { font-size: 2.1rem; font-weight: 800; line-height: 1.1; }
+    .sc .lbl { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; }
+    .c-err { border-top-color: #c94f3d; } .c-err .n { color: #c94f3d; }
+    .c-wrn { border-top-color: #d9962f; } .c-wrn .n { color: #b97a1a; }
+    .c-inf .n { color: var(--orange); }
+    .c-tot { background: var(--ink); border-color: var(--ink); border-top-color: var(--orange); }
+    .c-tot .n   { color: #fff; }
+    .c-tot .lbl { color: #b9a68f; }
+
+    /* フィルタ */
+    .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .tab  { padding: 5px 14px; border-radius: 22px; font-size: 0.83rem; cursor: pointer; border: 1.5px solid transparent; font-weight: 500; transition: all 0.15s; }
+    .tab.all     { background: white; color: var(--text-muted); border-color: var(--border); }
+    .tab.error   { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
+    .tab.warning { background: #fffbeb; color: #d97706; border-color: #fcd34d; }
+    .tab.info    { background: var(--orange-pale); color: #c05810; border-color: #fbbf80; }
+    .tab.yoy     { background: #f5f3ff; color: #7c3aed; border-color: #ddd6fe; }
+    .tab.active.all     { background: var(--orange); color: white; border-color: var(--orange); font-weight: 700; }
+    .tab.active.error   { border-color: #dc2626; font-weight: 700; }
+    .tab.active.warning { border-color: #d97706; font-weight: 700; }
+    .tab.active.info    { border-color: var(--orange); font-weight: 700; }
+    .tab.active.yoy     { border-color: #7c3aed; font-weight: 700; }
 
     /* 指摘カード */
-    .issue-list { display: flex; flex-direction: column; gap: 12px; }
-    .issue-card {
-      background: white;
-      border-radius: 10px;
-      padding: 16px 20px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-      border-left: 4px solid;
-      display: flex;
-      gap: 14px;
-      align-items: flex-start;
-    }
-    .issue-card.error { border-color: #dc2626; }
-    .issue-card.warning { border-color: #f59e0b; }
-    .issue-card.info { border-color: #3b82f6; }
+    .issues { display: flex; flex-direction: column; gap: 10px; }
+    .ic { background: white; border-radius: 11px; padding: 14px 18px; box-shadow: 0 1px 6px rgba(0,0,0,0.06); border-left: 4px solid; display: flex; gap: 11px; }
+    .ic.error   { border-color: #dc2626; }
+    .ic.warning { border-color: #f59e0b; }
+    .ic.info    { border-color: var(--orange); }
+    .ic-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 2px; }
+    .ic-body { flex: 1; }
+    .ic-head { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 5px; }
+    .bdg { padding: 2px 9px; border-radius: 12px; font-size: 0.72rem; font-weight: 700; }
+    .b-error   { background: #fef2f2; color: #dc2626; }
+    .b-warning { background: #fffbeb; color: #d97706; }
+    .b-info    { background: var(--orange-pale); color: #c05810; }
+    .b-cat  { background: #fde8d8; color: #7a3800; }
+    .b-acc  { background: #f0fdf4; color: #166534; }
+    .b-mon  { background: #f5f3ff; color: #6b21a8; }
+    .ic-msg { font-size: 0.88rem; line-height: 1.65; color: #4a3020; white-space: pre-wrap; }
 
-    .issue-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 2px; }
-    .issue-body { flex: 1; }
-    .issue-header {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 6px;
-      flex-wrap: wrap;
-    }
-    .badge {
-      padding: 2px 10px;
-      border-radius: 12px;
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-    .badge-error { background: #fef2f2; color: #dc2626; }
-    .badge-warning { background: #fffbeb; color: #d97706; }
-    .badge-info { background: #eff6ff; color: #2563eb; }
-    .badge-category { background: #f3f4f6; color: #374151; }
-    .badge-account { background: #f0fdf4; color: #166534; }
-    .badge-month { background: #faf5ff; color: #6b21a8; }
+    .meta { background: white; border-radius: 10px; padding: 11px 16px; margin-bottom: 16px; font-size: 0.85rem; color: var(--text-muted); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; box-shadow: 0 1px 6px rgba(0,0,0,0.06); }
+    .meta strong { color: var(--text); }
+    .bg-g { background: #f0fdf4; color: #059669; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
+    .bg-r { background: #fef2f2; color: #dc2626; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
+    .bg-p { background: #f5f3ff; color: #7c3aed; border-radius: 6px; padding: 2px 8px; font-size: 0.73rem; font-weight: 600; }
 
-    .issue-message { font-size: 0.92rem; line-height: 1.6; color: #374151; }
+    /* クライアント管理 */
+    .client-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+    .saved-file-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px; border-radius: 8px; font-size: .83rem;
+      background: white; border: 1px solid #f0c090; margin-bottom: 6px;
+    }
+    .saved-file-row.missing { background: #fef2f2; border-color: #fecaca; }
+    .saved-file-row .file-name { flex: 1; color: #8a4820; font-weight: 600; }
+    .saved-file-row.missing .file-name { color: #dc2626; }
+    .saved-file-row .saved-date { font-size: .75rem; color: var(--text-muted); }
+    .saved-file-row .del-btn {
+      font-size: .75rem; color: #9ca3af; cursor: pointer; padding: 1px 6px;
+      border-radius: 4px; border: 1px solid var(--border);
+    }
+    .saved-file-row .del-btn:hover { color: #dc2626; border-color: #fecaca; }
 
-    /* ローディング */
-    .loading {
-      text-align: center;
-      padding: 48px;
-      display: none;
-    }
-    .spinner {
-      width: 48px; height: 48px;
-      border: 4px solid #e5e7eb;
-      border-top-color: #1a56db;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 16px;
-    }
+    .loading { text-align: center; padding: 48px; display: none; }
+    .spinner { width: 44px; height: 44px; border: 4px solid #ece2d4; border-top-color: var(--orange); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    .meta-info {
-      background: white;
-      border-radius: 10px;
-      padding: 14px 20px;
-      margin-bottom: 20px;
-      font-size: 0.88rem;
-      color: #6b7280;
-      display: flex;
-      gap: 24px;
-      flex-wrap: wrap;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
-    .meta-info span strong { color: #374151; }
-
-    .empty-state {
-      text-align: center;
-      padding: 64px 32px;
-      color: #9ca3af;
-    }
-    .empty-state .icon { font-size: 4rem; margin-bottom: 16px; }
-
+    .empty { text-align: center; padding: 52px 32px; color: #9ca3af; }
+    .empty .icon { font-size: 3.5rem; margin-bottom: 12px; }
     #results { display: none; }
+    .count-badge { background: var(--ink); color: white; border-radius: 12px; padding: 1px 9px; font-size: 0.78rem; font-weight: 700; margin-left: 6px; }
   </style>
 </head>
 <body>
 
 <header>
-  <div>📊</div>
-  <div>
-    <h1>会計データチェックシステム</h1>
-    <div class="subtitle">BS・PL・消費税の自動チェック | 弥生・freee・MoneyForward 対応</div>
-  </div>
+  <img src="/static/harel_logo.png" alt="Harel税理士法人" class="header-logo">
+  <h1>会計データチェックシステム</h1>
+  <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
 </header>
 
 <div class="container">
 
-  <!-- アップロードエリア -->
-  <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-    <div class="upload-icon">📂</div>
-    <h2>CSVファイルをドロップ、またはクリックして選択</h2>
-    <p>弥生会計 / freee / MoneyForward のエクスポートCSVに対応</p>
-    <p style="margin-top:16px;">
-      <button class="btn btn-primary" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">ファイルを選択</button>
-      <button class="btn btn-secondary" onclick="event.stopPropagation(); runSample()">サンプルデータで試す</button>
+  <!-- ══ STEP 1: クライアント選択（任意） ══ -->
+  <div class="card" id="clientCard">
+    <div class="step-head"><span class="step-no">1</span>クライアントを選ぶ</div>
+    <p class="step-note">
+      <strong>CSVアップロードの場合：</strong>選択してください（保存済みの前期データから期首残高・前年比較・チェック設定を使います）。<br>
+      <strong>freeeから取得の場合：</strong>選択不要で②へ進めます（期首残高はfreeeから自動取得。前年比較を行うときのみ選択）。
     </p>
-    <input type="file" id="fileInput" accept=".csv" onchange="handleFile(this.files[0])">
+
+    <div class="client-row">
+      <!-- セレクトボックス -->
+      <div style="flex:1;min-width:200px;">
+        <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">保存済みクライアントから選択</label>
+        <select id="clientSelect" onchange="onClientSelect(this.value)"
+                style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:0.9rem;background:#fdf9f5;">
+          <option value="">-- 選択してください --</option>
+        </select>
+      </div>
+      <!-- または新規入力 -->
+      <div style="display:flex;align-items:center;color:#9ca3af;font-size:.85rem;padding-top:18px;">または</div>
+      <div style="flex:1;min-width:200px;">
+        <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">新規クライアント名を入力</label>
+        <input type="text" id="clientInput" placeholder="例: サンブルームコスメ株式会社"
+               oninput="onClientInput(this.value)"
+               style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:0.9rem;background:#fdf9f5;">
+      </div>
+    </div>
+
+    <!-- 新規クライアント：前期データ登録エリア -->
+    <div id="newClientArea" style="display:none;margin-top:14px;padding:16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;">
+      <div style="font-size:.88rem;font-weight:700;color:#1e40af;margin-bottom:10px;">
+        📋 新規クライアント — 前期データを登録してください
+      </div>
+      <p style="font-size:.82rem;color:#374151;margin-bottom:12px;">
+        以下のファイルをまとめてドロップしてください（最大6ファイル）。次回以降は自動で読み込まれます。
+      </p>
+      <!-- 新規用ドロップゾーン -->
+      <div class="drop-main" id="newClientDrop" style="padding:20px 16px;margin-bottom:10px;"
+           ondragover="onOver(event,'newClientDrop')" ondragleave="onLeave('newClientDrop')"
+           ondrop="onDropNewClient(event)"
+           onclick="document.getElementById('newClientFileInput').click()">
+        <div class="icon" style="font-size:1.8rem;">📁</div>
+        <div class="title" id="newClientDropTitle">前期ファイルをドロップ</div>
+        <div class="hint">
+          <strong>① 前期仕訳帳</strong>（例: 前期仕訳.txt）<br>
+          <strong>② 前期首残高</strong>（例: 前期期首残高.txt）<br>
+          <strong>③ 前期首補助残高</strong>（例: 前期首補助残高.txt）
+        </div>
+        <input type="file" id="newClientFileInput" accept=".csv,.txt" multiple style="display:none"
+               onchange="addNewClientFiles(this.files)">
+      </div>
+      <div id="newClientFileList" style="margin-bottom:10px;"></div>
+      <button class="btn btn-primary" id="newClientSaveBtn" onclick="saveNewClientPrior()"
+              disabled style="width:100%;justify-content:center;">
+        💾 このクライアントの前期データを保存
+      </button>
+      <p style="font-size:.78rem;color:#6b7280;margin-top:8px;">
+        ※ 前期データがない場合はスキップして当期ファイルだけでもチェックできます
+      </p>
+    </div>
+
+    <!-- 既存クライアント：保存済みデータ表示 -->
+    <div id="clientStatus" style="display:none;margin-top:14px;">
+      <div style="font-size:.82rem;color:#374151;font-weight:600;margin-bottom:8px;">💾 保存済みの前期データ</div>
+      <div id="clientStatusBody"></div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" style="font-size:.82rem;padding:6px 16px;"
+                onclick="openSaveModal()">前期データを更新</button>
+        <button class="btn btn-secondary" style="font-size:.82rem;padding:6px 16px;"
+                onclick="openSettingsModal()">⚙️ チェック設定</button>
+        <button class="btn" style="font-size:.82rem;padding:6px 16px;background:#fef2f2;color:#dc2626;"
+                onclick="confirmDeleteClient()">クライアントを削除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ チェック設定モーダル ══ -->
+  <div id="settingsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:14px;padding:28px 32px;max-width:540px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18);">
+      <div style="font-size:1rem;font-weight:700;margin-bottom:6px;">⚙️ チェック設定</div>
+      <div style="font-size:.82rem;color:#9a7060;margin-bottom:18px;">クライアント: <strong id="settingsClientName"></strong></div>
+
+      <div style="font-size:.85rem;font-weight:700;color:#2c1f10;margin-bottom:8px;">🚫 チェック対象外の勘定科目</div>
+      <p style="font-size:.8rem;color:#9a7060;margin-bottom:10px;line-height:1.6;">
+        補助科目が意味をなしていない科目など、残高チェックをスキップしたい科目を設定します。<br>
+        複数ある場合は改行して入力してください。
+      </p>
+      <textarea id="excludeAccountsInput"
+        style="width:100%;height:110px;padding:10px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.88rem;font-family:inherit;resize:vertical;background:#fdf9f5;"
+        placeholder="例:&#10;売掛金&#10;受取手形&#10;電子記録債権"></textarea>
+      <p style="font-size:.76rem;color:#c09070;margin-top:6px;">※ 入力した科目名を含むすべての補助科目もチェック対象外になります</p>
+
+      <hr style="margin:18px 0;border-color:#f0c090;">
+
+      <div style="font-size:.85rem;font-weight:700;color:#2c1f10;margin-bottom:8px;">📅 月次締め日</div>
+      <p style="font-size:.8rem;color:#9a7060;margin-bottom:10px;line-height:1.6;">
+        月次の締め日を設定します。20日締めの場合は「20」と入力してください。<br>
+        定例費用（減価償却費など）の計上漏れチェックに使用されます。
+      </p>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" id="fiscalCutoffInput" min="1" max="31" value="1"
+          style="width:80px;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.9rem;background:#fdf9f5;">
+        <span style="font-size:.85rem;color:#9a7060;">日締め（1 = 月末締め）</span>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+        <button class="btn btn-secondary" onclick="closeSettingsModal()">キャンセル</button>
+        <button class="btn btn-primary" onclick="saveSettings()">保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 前期データ保存モーダル ══ -->
+  <div id="saveModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:14px;padding:28px 32px;max-width:520px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18);">
+      <div style="font-size:1rem;font-weight:700;margin-bottom:16px;">💾 前期データを保存</div>
+      <p style="font-size:.85rem;color:#6b7280;margin-bottom:14px;">
+        前期の仕訳帳・残高ファイルをまとめてドロップしてください（1〜3ファイル）。<br>
+        次回以降、このクライアントを選択すると自動で読み込まれます。
+      </p>
+      <div class="drop-main" id="modalDrop" style="min-height:100px;"
+           ondragover="onOver(event,'modalDrop')" ondragleave="onLeave('modalDrop')" ondrop="onDropModal(event)"
+           onclick="document.getElementById('modalFileInput').click()">
+        <div class="icon">📁</div>
+        <div class="title" id="modalDropTitle">前期ファイルをドロップ</div>
+        <div class="hint">前期仕訳帳・前期首残高・前期首補助残高（順番不問・最大6ファイル）</div>
+        <input type="file" id="modalFileInput" accept=".csv,.txt" multiple style="display:none"
+               onchange="addModalFiles(this.files)">
+      </div>
+      <div id="modalFileList" style="margin:10px 0;"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-secondary" onclick="closeSaveModal()">キャンセル</button>
+        <button class="btn btn-primary" id="modalSaveBtn" onclick="savePriorFiles()" disabled>保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ STEP 2: 当期データを取り込む（CSV / freee タブ） ══ -->
+  <div class="card">
+    <div class="step-head"><span class="step-no">2</span>当期データを取り込む</div>
+
+    <!-- 取り込み方法の切替タブ -->
+    <div class="seg">
+      <button type="button" id="csvTabBtn" class="seg-btn active" onclick="switchDataTab('csv')">
+        📄 CSVアップロード
+      </button>
+      <button type="button" id="freeeTabBtn" class="seg-btn" style="display:none;" onclick="switchDataTab('freee')">
+        🔗 freeeから取得
+      </button>
+    </div>
+
+    <!-- CSVパネル -->
+    <div id="csvPanel">
+      <div class="drop-main" id="dropZone"
+           ondragover="onOver(event)" ondragleave="onLeave()" ondrop="onDrop(event)"
+           onclick="document.getElementById('fileInput').click()">
+        <div class="icon">📄</div>
+        <div class="title" id="dropTitle">当期仕訳帳CSVをドロップ、またはクリックして選択</div>
+        <div class="hint">
+          <strong>当期仕訳帳のみ</strong>でOKです（弥生 / freee / MoneyForward）<br>
+          <span style="color:#059669;">✅ 当期首残高は前期データから自動導出されます（別途アップロード不要）</span>
+        </div>
+        <input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none"
+               onchange="addFiles(this.files)">
+      </div>
+      <div class="file-list" id="fileList"></div>
+      <div class="guide">
+        <strong>📌 残高CSV（試算表・補助残高）のフォーマット</strong><br>
+        弥生の「残高試算表」「補助残高一覧表」エクスポートをそのままアップロードできます。<br>
+        手入力の場合: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">勘定科目, 補助科目, 期首残高</code>（例: <code style="background:#fef3c7;padding:1px 5px;border-radius:3px;font-family:monospace;">普通預金, 永和信用金庫・梅田, 5000000</code>）
+      </div>
+    </div>
+
+    <!-- freeeパネル -->
+    <div id="freeePanel" style="display:none;">
+      <div id="freeeDisconnected" style="display:none;">
+        <p style="font-size:.85rem;color:#374151;margin-bottom:12px;">
+          freeeと連携すると、CSVを書き出さずに仕訳帳を直接取得してチェックできます。
+        </p>
+        <button class="btn btn-primary" onclick="freeeConnect()" style="justify-content:center;">
+          freeeと連携する
+        </button>
+      </div>
+      <div id="freeeConnected" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="font-size:.85rem;color:#059669;font-weight:700;">✅ freee連携済み</span>
+          <button class="btn" style="font-size:.76rem;padding:4px 12px;background:#fef2f2;color:#dc2626;"
+                  onclick="freeeDisconnect()">連携解除</button>
+          <button class="btn btn-secondary" style="font-size:.76rem;padding:4px 12px;margin-left:auto;"
+                  onclick="freeeConnect()">＋ 事業所を追加連携</button>
+        </div>
+        <label style="font-size:.82rem;color:#6b7280;display:block;margin-bottom:4px;">対象のfreee事業所を選択</label>
+        <select id="freeeCompanySelect" onchange="updateCheckBtn()"
+                style="width:100%;padding:8px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.9rem;background:#fdf9f5;margin-bottom:6px;">
+          <option value="">-- 読み込み中... --</option>
+        </select>
+        <p id="freeeConnNote" style="font-size:.76rem;color:#c05810;margin:0;"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ STEP 3: チェック実行 ══ -->
+  <div class="card">
+    <div class="step-head"><span class="step-no">3</span>チェックを実行</div>
+
+    <div style="margin-bottom:14px;padding:12px 14px;background:#fdf9f5;border:1.5px solid #f0c090;border-radius:10px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:.82rem;font-weight:700;color:#7a3800;">📅 対象期間</span>
+        <span style="font-size:.85rem;color:#9a7060;">〜</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input id="checkUntilInput" type="text" readonly placeholder="カレンダーから選択"
+            style="padding:7px 12px;border:1.5px solid #e8d5c0;border-radius:9px;font-size:.85rem;
+                   background:#fff;color:#2c1f10;min-width:160px;cursor:pointer;">
+          <span style="font-size:1.1rem;cursor:pointer;" onclick="document.getElementById('checkUntilInput')._flatpickr?.open()">📆</span>
+        </div>
+        <span style="font-size:.85rem;color:#9a7060;">まで</span>
+        <span id="checkUntilLabel" style="font-size:.82rem;color:#9a7060;"></span>
+        <button id="clearPeriodBtn" onclick="clearPeriod()"
+                style="font-size:.78rem;color:#c05810;background:none;border:none;cursor:pointer;text-decoration:underline;">リセット</button>
+      </div>
+      <p style="font-size:.76rem;color:#9a7060;margin:8px 0 0;">
+        ※ 締め日が20日の場合は「5月20日」のように日付単位で指定できます。未指定なら最終入力月まで自動判定。
+      </p>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="checkBtn" onclick="runCheckAuto()" disabled>
+        ▶ チェック実行
+      </button>
+      <button class="btn btn-secondary" onclick="runSample()">サンプルで試す</button>
+      <button class="btn btn-secondary" onclick="clearFiles()" id="clearBtn" style="display:none">クリア</button>
+    </div>
   </div>
 
   <!-- ローディング -->
   <div class="loading" id="loading">
     <div class="spinner"></div>
-    <p>チェック中...</p>
+    <p>ファイルを解析・チェック中...</p>
   </div>
 
-  <!-- 結果エリア -->
+  <!-- 結果 -->
   <div id="results">
-    <div class="meta-info" id="metaInfo"></div>
+    <!-- 振り分けログ -->
+    <div class="card" style="padding:16px 22px;">
+      <div style="font-size:0.88rem;font-weight:600;color:#374151;margin-bottom:8px;">🔍 自動振り分け結果</div>
+      <div class="log-box show" id="logBox"></div>
+    </div>
 
+    <div class="meta"   id="metaInfo"></div>
     <div class="summary-grid" id="summaryGrid"></div>
-
-    <div class="filter-tabs" id="filterTabs"></div>
-
-    <div class="issue-list" id="issueList"></div>
+    <!-- CSVダウンロードボタン -->
+    <div id="exportBar" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+      <div class="tabs" id="filterTabs" style="margin-bottom:0;flex:1;"></div>
+      <button onclick="exportXLSX()"
+        style="background:var(--orange);color:white;border:none;padding:8px 20px;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 2px 6px rgba(244,122,32,.3);">
+        📥 チェックシート Excel出力
+      </button>
+    </div>
+    <div class="issues" id="issueList"></div>
   </div>
 
 </div>
 
 <script>
-  const uploadArea = document.getElementById('uploadArea');
+  // ════════════════════════════════════
+  // クライアント管理
+  // ════════════════════════════════════
+  let currentClient = "";
+  let clientHasPrior = { journal: false, bal_main: false, bal_sub: false };
 
-  uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
-  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
-  uploadArea.addEventListener('drop', e => {
+  async function loadClientList() {
+    try {
+      const res  = await fetch('/api/clients');
+      const list = await res.json();
+      const sel  = document.getElementById('clientSelect');
+      sel.innerHTML = '<option value="">-- 選択してください --</option>';
+      list.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.name;
+        opt.textContent = c.name;
+        sel.appendChild(opt);
+      });
+    } catch(e) {}
+  }
+
+  async function onClientSelect(name) {
+    document.getElementById('clientInput').value = name;
+    currentClient = name;
+    if (name) await showClientStatus(name);
+    else hideClientStatus();
+  }
+
+  function onClientInput(val) {
+    currentClient = val;
+    document.getElementById('clientSelect').value = '';
+    if (!val) { hideClientStatus(); return; }
+    showClientStatus(val);
+  }
+
+  // 新規クライアント用ファイルリスト
+  const newClientFiles = [];
+
+  function addNewClientFiles(fileList) {
+    for (const f of fileList) {
+      if (newClientFiles.length >= 6) break;
+      if (!newClientFiles.find(x => x.name === f.name)) newClientFiles.push(f);
+    }
+    renderNewClientFileList();
+  }
+
+  function renderNewClientFileList() {
+    const list = document.getElementById('newClientFileList');
+    list.innerHTML = newClientFiles.map(f =>
+      `<div class="file-item"><span>📄</span><span class="name">${f.name}</span></div>`
+    ).join('');
+    const btn = document.getElementById('newClientSaveBtn');
+    if (btn) btn.disabled = newClientFiles.length === 0;
+    const zone = document.getElementById('newClientDrop');
+    const title = document.getElementById('newClientDropTitle');
+    if (newClientFiles.length > 0) {
+      zone?.classList.add('has-files');
+      if (title) title.textContent = `✅ ${newClientFiles.length}ファイル選択済み`;
+    }
+  }
+
+  function onDropNewClient(e) {
     e.preventDefault();
-    uploadArea.classList.remove('dragover');
-    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
-  });
+    document.getElementById('newClientDrop')?.classList.remove('over');
+    addNewClientFiles(e.dataTransfer.files);
+  }
 
-  async function handleFile(file) {
-    if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
+  async function saveNewClientPrior() {
+    if (!currentClient) { alert('クライアント名を入力してください'); return; }
+    if (newClientFiles.length === 0) { alert('ファイルを選択してください'); return; }
+
+    const btn = document.getElementById('newClientSaveBtn');
+    btn.disabled = true; btn.textContent = '保存中...';
+
+    try {
+      const fd = new FormData();
+      for (const f of newClientFiles) {
+        const blob = new Blob([f], { type: 'text/plain' });
+        fd.append('files', blob, f.name);
+      }
+      const res  = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/save-prior`, {
+        method: 'POST', body: fd,
+      });
+      const text2 = await res.text();
+      let data;
+      try { data = JSON.parse(text2); }
+      catch(e) { throw new Error('サーバーエラー: ' + text2.slice(0,100)); }
+      if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
+
+      // 保存完了 → 既存クライアントのUIに切り替え
+      newClientFiles.length = 0;
+      document.getElementById('newClientArea').style.display = 'none';
+      await loadClientList();
+      document.getElementById('clientSelect').value = currentClient;
+      await showClientStatus(currentClient);
+      const uploaded = (data.uploaded_count || data.saved?.length || 0);
+      const saved    = data.saved?.length || 0;
+      const msg = uploaded > saved
+        ? `✅ 保存しました\n・アップロード: ${uploaded}ファイル\n・保存形式: ${saved}種類\n（複数の試算表は自動マージして保存）`
+        : `✅ 保存しました（${saved}種類）`;
+      alert(msg);
+    } catch(e) {
+      alert('エラー: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = '💾 このクライアントの前期データを保存';
+    }
+  }
+
+  async function showClientStatus(name) {
+    try {
+      const res = await fetch(`/api/clients/${encodeURIComponent(name)}`);
+
+      // 新規クライアント（未保存）
+      if (!res.ok) {
+        document.getElementById('clientStatus').style.display = 'none';
+        newClientFiles.length = 0;
+        const area = document.getElementById('newClientArea');
+        area.style.display = 'block';
+        document.getElementById('newClientDropTitle').textContent = '前期ファイルをドロップ';
+        document.getElementById('newClientDrop').classList.remove('has-files');
+        document.getElementById('newClientFileList').innerHTML = '';
+        document.getElementById('newClientSaveBtn').disabled = true;
+        updateDropHint();
+        return;
+      }
+
+      // 既存クライアント
+      document.getElementById('newClientArea').style.display = 'none';
+      const info = await res.json();
+      const saved = info.saved_files;
+      clientHasPrior = {
+        journal:  saved.prior_journal?.exists  || false,
+        bal_main: saved.prior_bal_main?.exists || false,
+        bal_sub:  saved.prior_bal_sub?.exists  || false,
+      };
+
+      const keys = [
+        ['prior_journal',  '前期仕訳帳'],
+        ['prior_bal_main', '前期首残高（主科目）'],
+        ['prior_bal_sub',  '前期首補助残高'],
+      ];
+      document.getElementById('clientStatusBody').innerHTML = keys.map(([k, label]) => {
+        const f = saved[k];
+        if (f?.exists) {
+          return `<div class="saved-file-row">
+            <span>✅</span>
+            <span class="file-name">${label}</span>
+            <span class="saved-date">${f.original_name} （保存日: ${f.saved_at}）</span>
+            <span class="del-btn" onclick="deletePriorFile('${name}','${k}')">削除</span>
+          </div>`;
+        } else {
+          return `<div class="saved-file-row missing">
+            <span>⬜</span>
+            <span class="file-name">${label} — 未保存</span>
+          </div>`;
+        }
+      }).join('');
+
+      document.getElementById('clientStatus').style.display = 'block';
+      updateDropHint();
+    } catch(e) {
+      hideClientStatus();
+    }
+  }
+
+  function hideClientStatus() {
+    clientHasPrior = { journal: false, bal_main: false, bal_sub: false };
+    document.getElementById('clientStatus').style.display = 'none';
+    document.getElementById('newClientArea').style.display = 'none';
+    updateDropHint();
+  }
+
+  function updateDropHint() {
+    const hasAll = clientHasPrior.journal && clientHasPrior.bal_main && clientHasPrior.bal_sub;
+    const hasSome = clientHasPrior.journal || clientHasPrior.bal_main || clientHasPrior.bal_sub;
+    const hint = document.querySelector('#dropZone .hint');
+    if (hasAll) {
+      hint.innerHTML = '<strong>当期仕訳帳のみ</strong>でOKです（順番不問）<br>'
+        + '<span style="color:#059669;">✅ 前期データはすべて自動読み込みされます</span>';
+    } else if (hasSome) {
+      hint.innerHTML = '当期ファイル + 不足している前期ファイルもドロップしてください<br>'
+        + '<span style="color:#d97706;">⚠️ 一部の前期データが未保存です</span>';
+    } else {
+      hint.innerHTML = '<strong>当期仕訳帳のみ</strong>でOKです（順番不問）<br>'
+        + '<span style="color:#059669;">✅ クライアントを選択すると前期データは自動読み込みされます</span>';
+    }
+  }
+
+  async function deletePriorFile(clientName, fileKey) {
+    if (!confirm(`「${fileKey}」を削除しますか？`)) return;
+    await fetch(`/api/clients/${encodeURIComponent(clientName)}/prior/${fileKey}`, { method: 'DELETE' });
+    await showClientStatus(clientName);
+  }
+
+  async function confirmDeleteClient() {
+    if (!confirm(`クライアント「${currentClient}」のすべてのデータを削除しますか？`)) return;
+    await fetch(`/api/clients/${encodeURIComponent(currentClient)}`, { method: 'DELETE' });
+    await loadClientList();
+    hideClientStatus();
+    document.getElementById('clientInput').value = '';
+    document.getElementById('clientSelect').value = '';
+    currentClient = '';
+  }
+
+  // ─── 前期データ保存モーダル ───
+  const modalFiles = [];
+
+  function openSaveModal() {
+    modalFiles.length = 0;
+    document.getElementById('modalFileList').innerHTML = '';
+    document.getElementById('modalDropTitle').textContent = '前期ファイルをドロップ';
+    document.getElementById('modalDrop').classList.remove('has-files');
+    document.getElementById('modalSaveBtn').disabled = true;
+    document.getElementById('saveModal').style.display = 'flex';
+  }
+  function closeSaveModal() {
+    document.getElementById('saveModal').style.display = 'none';
+  }
+
+  function addModalFiles(fileList) {
+    for (const f of fileList) {
+      if (modalFiles.length >= 6) break;
+      if (!modalFiles.find(x => x.name === f.name)) modalFiles.push(f);
+    }
+    renderModalFileList();
+  }
+
+  function renderModalFileList() {
+    document.getElementById('modalFileList').innerHTML =
+      modalFiles.map(f => `<div class="file-item"><span>📄</span><span class="name">${f.name}</span></div>`).join('');
+    document.getElementById('modalSaveBtn').disabled = modalFiles.length === 0;
+    if (modalFiles.length > 0) {
+      document.getElementById('modalDropTitle').textContent = `✅ ${modalFiles.length}ファイル選択済み`;
+      document.getElementById('modalDrop').classList.add('has-files');
+    }
+  }
+
+  function onDropModal(e) {
+    e.preventDefault();
+    document.getElementById('modalDrop').classList.remove('over');
+    addModalFiles(e.dataTransfer.files);
+  }
+
+  // ファイルをテキストとして読み込む（FileReader API）
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      // Shift-JIS対応のため複数エンコーディングを試みる
+      reader.onload = e => resolve({ name: file.name, content: e.target.result });
+      reader.onerror = () => reject(new Error(file.name + ' の読み込みに失敗'));
+      reader.readAsText(file, 'Shift_JIS');  // freeeはShift-JIS
+    });
+  }
+
+  async function savePriorFiles() {
+    if (!currentClient) { alert('クライアント名を入力してください'); return; }
+    if (modalFiles.length === 0) { alert('ファイルを選択してください'); return; }
+
+    document.getElementById('modalSaveBtn').disabled = true;
+    document.getElementById('modalSaveBtn').textContent = '保存中...';
+
+    try {
+      // ファイルをJSで読み込んでからFormDataで送信
+      const fd = new FormData();
+      for (const f of modalFiles) {
+        const blob = new Blob([f], { type: 'text/plain' });
+        fd.append('files', blob, f.name);
+      }
+      const url = `/api/clients/${encodeURIComponent(currentClient)}/save-prior`;
+
+      const res  = await fetch(url, {
+        method: 'POST', body: fd,
+      });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch(e) { throw new Error('サーバーエラー: ' + text.slice(0,100)); }
+      if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
+
+      closeSaveModal();
+      await loadClientList();
+      await showClientStatus(currentClient);
+      // セレクトボックスも更新
+      document.getElementById('clientSelect').value = currentClient;
+      const uploaded = (data.uploaded_count || data.saved?.length || 0);
+      const saved    = data.saved?.length || 0;
+      const msg = uploaded > saved
+        ? `✅ 保存しました\n・アップロード: ${uploaded}ファイル\n・保存形式: ${saved}種類\n（複数の試算表は自動マージして保存）`
+        : `✅ 保存しました（${saved}種類）`;
+      alert(msg);
+    } catch(e) {
+      alert('エラー: ' + e.message);
+    } finally {
+      document.getElementById('modalSaveBtn').disabled = false;
+      document.getElementById('modalSaveBtn').textContent = '保存する';
+    }
+  }
+
+  // ════════════════════════════════════
+  // チェック設定モーダル
+  // ════════════════════════════════════
+  async function openSettingsModal() {
+    if (!currentClient) return alert('クライアントを選択してください');
+    document.getElementById('settingsClientName').textContent = currentClient;
+    // 既存設定を読み込む
+    try {
+      const res  = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/settings`);
+      const data = await res.json();
+      const accounts = (data.exclude_accounts || []).join('\n');
+      document.getElementById('excludeAccountsInput').value = accounts;
+      document.getElementById('fiscalCutoffInput').value = data.fiscal_cutoff_day || 1;
+    } catch(e) {
+      document.getElementById('excludeAccountsInput').value = '';
+    }
+    document.getElementById('settingsModal').style.display = 'flex';
+  }
+  function closeSettingsModal() {
+    document.getElementById('settingsModal').style.display = 'none';
+  }
+  async function saveSettings() {
+    if (!currentClient) return;
+    const raw = document.getElementById('excludeAccountsInput').value;
+    const accounts = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    try {
+      const res = await fetch(`/api/clients/${encodeURIComponent(currentClient)}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+        exclude_accounts:  accounts,
+        fiscal_cutoff_day: parseInt(document.getElementById('fiscalCutoffInput').value) || 1,
+      }),
+      });
+      const data = await res.json();
+      closeSettingsModal();
+      const msg = accounts.length > 0
+        ? `✅ 設定を保存しました。\n除外科目: ${accounts.join('、')}`
+        : '✅ 設定を保存しました（除外科目なし）';
+      alert(msg);
+    } catch(e) {
+      alert('エラー: ' + e.message);
+    }
+  }
+
+  // ════════════════════════════════════
+  // チェック対象期間セレクター
+  // ════════════════════════════════════
+  function clearPeriod() {
+    const fp = document.getElementById('checkUntilInput')?._flatpickr;
+    if (fp) fp.clear();
+    const label = document.getElementById('checkUntilLabel');
+    if (label) { label.textContent = ''; }
+  }
+
+  // 初期化
+  loadClientList();
+  initFreee();
+
+  // ════════════════════════════════════
+  // ファイルアップロード
+  // ════════════════════════════════════
+  const selectedFiles = [];  // { file, name }
+
+  // ── ファイル追加 ──
+  function addFiles(fileList) {
+    for (const f of fileList) {
+      if (selectedFiles.length >= 6) { alert('最大6ファイルまでです'); break; }
+      if (selectedFiles.find(s => s.name === f.name)) continue; // 重複スキップ
+      selectedFiles.push({ file: f, name: f.name });
+    }
+    renderFileList();
+  }
+
+  function removeFile(name) {
+    const idx = selectedFiles.findIndex(f => f.name === name);
+    if (idx >= 0) selectedFiles.splice(idx, 1);
+    renderFileList();
+  }
+
+  function clearFiles() {
+    selectedFiles.length = 0;
+    renderFileList();
+    document.getElementById('results').style.display = 'none';
+  }
+
+  function renderFileList() {
+    const list = document.getElementById('fileList');
+    const btn  = document.getElementById('checkBtn');
+    const clr  = document.getElementById('clearBtn');
+    const zone = document.getElementById('dropZone');
+    const ttl  = document.getElementById('dropTitle');
+    const cnt  = document.getElementById('fileInput');
+
+    if (selectedFiles.length === 0) {
+      list.innerHTML = '';
+      updateCheckBtn();
+      clr.style.display = 'none';
+      zone.classList.remove('has-files');
+      ttl.textContent = 'ファイルをまとめてドロップ、またはクリックして選択';
+      cnt.value = '';
+      return;
+    }
+
+    list.innerHTML = selectedFiles.map(f => `
+      <div class="file-item">
+        <span>📄</span>
+        <span class="name">${f.name}</span>
+        <span class="remove" onclick="removeFile('${f.name}')">✕</span>
+      </div>
+    `).join('');
+
+    updateCheckBtn();
+    clr.style.display = 'inline-block';
+    zone.classList.add('has-files');
+    ttl.textContent = `✅ ${selectedFiles.length}ファイル選択済み（クリックで追加）`;
+  }
+
+  // ── ドラッグ＆ドロップ ──
+  function onOver(e) { e.preventDefault(); document.getElementById('dropZone').classList.add('over'); }
+  function onLeave()  { document.getElementById('dropZone').classList.remove('over'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('dropZone').classList.remove('over');
+    addFiles(e.dataTransfer.files);
+  }
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // ── JSONレスポンス取得ヘルパー ──
+  // opts.warmup=true のとき、Renderのスリープ解除（502/503や接続失敗）を
+  // 自動でリトライして待つ。待機中は onWait でメッセージを更新する。
+  async function fetchJSON(url, options, opts = {}) {
+    const { warmup = false, onWait = null, maxWaitMs = 90000, intervalMs = 3000 } = opts;
+    const deadline = Date.now() + maxWaitMs;
+    let waited = false;
+
+    while (true) {
+      let res, text;
+      try {
+        res = await fetch(url, options);
+        text = await res.text();
+      } catch (netErr) {
+        // 起動途中は接続拒否になることがある → 待ってリトライ
+        if (warmup && Date.now() < deadline) {
+          waited = true; if (onWait) onWait();
+          await sleep(intervalMs); continue;
+        }
+        throw new Error('サーバーに接続できませんでした。時間をおいて再実行してください。');
+      }
+
+      // コールドスタート中は 502/503 が返る → 待ってリトライ
+      if ((res.status === 502 || res.status === 503) && warmup && Date.now() < deadline) {
+        waited = true; if (onWait) onWait();
+        await sleep(intervalMs); continue;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        if (res.status === 503 || res.status === 502) {
+          throw new Error('サーバーの起動に時間がかかっています。もう一度お試しください。');
+        }
+        throw new Error(`サーバーエラー (${res.status})。しばらく待ってから再実行してください。`);
+      }
+      if (!res.ok) throw new Error(data.detail || `エラー (${res.status})`);
+      if (waited && onWait) onWait(true);   // 起動完了を通知
+      return data;
+    }
+  }
+
+  // ローディング中のメッセージ切替
+  function setLoadingMsg(text) {
+    const p = document.querySelector('#loading p');
+    if (p) p.textContent = text;
+  }
+  // warmup用の共通オプション（起動待ちメッセージを出す）
+  function warmupOpts() {
+    let shown = false;
+    return { warmup: true, onWait: (done) => {
+      if (done) { setLoadingMsg('ファイルを解析・チェック中...'); return; }
+      if (!shown) { shown = true;
+        setLoadingMsg('サーバーを起動しています… そのままお待ちください（初回は30〜60秒かかります）');
+      }
+    }};
+  }
+
+  // ── チェック実行 ──
+  async function runCheck() {
+    if (selectedFiles.length === 0) return alert('ファイルを選択してください');
+    // CSVの場合、クライアント未選択だと期首残高・前年比較・チェック設定が使われない
+    if (!currentClient) {
+      const ok = confirm(
+        'クライアントが選択されていません。\n' +
+        '保存済みの前期データ（期首残高・前年比較・チェック設定）を使わずに実行しますか？\n\n' +
+        '※ 通常は ①でクライアントを選択してから実行してください。'
+      );
+      if (!ok) return;
+    }
+    const fd = new FormData();
+    for (const f of selectedFiles) fd.append('files', f.file);
+    if (currentClient) fd.append('client_name', currentClient);
+    const checkUntil = document.getElementById('checkUntilInput').value;
+    if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
-      const res = await fetch('/api/check', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'エラーが発生しました');
+      const data = await fetchJSON('/api/check-auto', { method: 'POST', body: fd }, warmupOpts());
       renderResults(data);
-    } catch (e) {
-      alert('エラー: ' + e.message);
-      hideLoading();
+    } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
+  }
+
+  // ── データ取り込みタブ（CSV / freee）の切替 ──
+  let dataTab = 'csv';
+  function switchDataTab(tab) {
+    dataTab = tab;
+    document.getElementById('csvTabBtn').classList.toggle('active', tab === 'csv');
+    document.getElementById('freeeTabBtn').classList.toggle('active', tab === 'freee');
+    document.getElementById('csvPanel').style.display   = tab === 'csv'   ? 'block' : 'none';
+    document.getElementById('freeePanel').style.display = tab === 'freee' ? 'block' : 'none';
+    updateCheckBtn();
+  }
+
+  // 実行ボタンの有効/無効を、選択中のタブと入力状況に応じて更新
+  function updateCheckBtn() {
+    const btn = document.getElementById('checkBtn');
+    if (!btn) return;
+    if (dataTab === 'freee') {
+      btn.disabled = !document.getElementById('freeeCompanySelect')?.value;
+    } else {
+      btn.disabled = selectedFiles.length === 0;
     }
+  }
+
+  // 選択中のタブに応じてCSV/freeeのチェックを実行
+  function runCheckAuto() {
+    if (dataTab === 'freee') runFreeeCheck();
+    else runCheck();
+  }
+
+  // ── freee 連携 ──
+  async function initFreee() {
+    try {
+      const s = await fetchJSON('/api/freee/status');
+      if (!s.configured) return;                 // 未設定ならfreeeタブを出さない
+      document.getElementById('freeeTabBtn').style.display = 'inline-flex';
+      if (s.connected) {
+        document.getElementById('freeeConnected').style.display = 'block';
+        document.getElementById('freeeDisconnected').style.display = 'none';
+        loadFreeeCompanies();
+      } else {
+        document.getElementById('freeeConnected').style.display = 'none';
+        document.getElementById('freeeDisconnected').style.display = 'block';
+      }
+    } catch(e) { /* freee未設定時は何もしない */ }
+  }
+
+  function freeeConnect() {
+    // 認可画面へ（新しいタブ）。完了後にこのタブへ戻ってくる
+    window.open('/api/freee/authorize', '_blank');
+    alert('freeeの認可画面を開きました。許可が完了したら、この画面を再読み込みしてください。');
+  }
+
+  async function freeeDisconnect() {
+    if (!confirm('freee連携を解除しますか？')) return;
+    await fetch('/api/freee/disconnect', { method: 'POST' });
+    initFreee();
+  }
+
+  async function loadFreeeCompanies() {
+    const sel = document.getElementById('freeeCompanySelect');
+    try {
+      const data = await fetchJSON('/api/freee/companies');
+      // 連携済みを先頭に、未連携は「(未連携)」表示
+      const opts = data.companies.map(c =>
+        `<option value="${c.id}">${c.connected ? '✅ ' : ''}${c.name}${c.connected ? '' : '（未連携）'}</option>`
+      ).join('');
+      sel.innerHTML = '<option value="">-- 事業所を選択 --</option>' + opts;
+      const n = data.companies.filter(c => c.connected).length;
+      const note = document.getElementById('freeeConnNote');
+      if (note) note.textContent =
+        `連携済み ${n}社。未連携の事業所は「freeeと連携する」で1社ずつ追加してください。`;
+    } catch(e) {
+      sel.innerHTML = '<option value="">取得失敗（再連携が必要かもしれません）</option>';
+    }
+  }
+
+  async function runFreeeCheck() {
+    const cid = document.getElementById('freeeCompanySelect').value;
+    if (!cid) return alert('freee事業所を選択してください');
+    const fd = new FormData();
+    fd.append('company_id', cid);
+    if (currentClient) fd.append('client_name', currentClient);
+    const checkUntil = document.getElementById('checkUntilInput').value;
+    if (checkUntil) fd.append('check_until', checkUntil);
+    showLoading();
+    try {
+      const data = await fetchJSON('/api/freee/check', { method: 'POST', body: fd }, warmupOpts());
+      renderResults(data);
+    } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
 
   async function runSample() {
     showLoading();
     try {
-      const res = await fetch('/api/sample');
-      const data = await res.json();
+      const data = await fetchJSON('/api/sample', undefined, warmupOpts());
       renderResults(data);
-    } catch (e) {
-      alert('エラー: ' + e.message);
-      hideLoading();
-    }
+    } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
 
   function showLoading() {
-    document.getElementById('loading').style.display = 'block';
-    document.getElementById('results').style.display = 'none';
+    document.getElementById('loading').style.display  = 'block';
+    document.getElementById('results').style.display  = 'none';
   }
+  function hideLoading() { document.getElementById('loading').style.display = 'none'; }
 
-  function hideLoading() {
-    document.getElementById('loading').style.display = 'none';
-  }
-
+  // ── 結果表示 ──
   function renderResults(data) {
     hideLoading();
     const { summary, issues } = data;
 
+    // 振り分けログ
+    const log = summary.classification_log || [];
+    document.getElementById('logBox').innerHTML =
+      log.map(l => `<div>${l}</div>`).join('') || '<div>（ログなし）</div>';
+
     // メタ情報
+    // Flatpickr の範囲を実データに合わせて制限（任意）
+    if (summary.date_range && window.fpInstance) {
+      fpInstance.set('minDate', summary.date_range.start);
+      fpInstance.set('maxDate', summary.date_range.end);
+    }
+
+    const obLabel    = summary.ob_source && summary.ob_source !== 'なし'
+      ? `期首残高あり（${summary.ob_accounts}科目・${summary.ob_source}）`
+      : `期首残高あり（${summary.ob_accounts}科目）`;
+    const obBadge    = summary.has_ob ? `<span class="bg-g">${obLabel}</span>` : '<span class="bg-r">期首残高なし</span>';
+    const priorBadge = summary.has_prior_journal ? '<span class="bg-p">前期比較あり</span>' : '';
+    const excl = summary.exclude_accounts?.length > 0
+      ? `<span style="background:#fef5ed;color:#c05810;border-radius:6px;padding:2px 8px;font-size:.73rem;font-weight:600;">🚫 除外: ${summary.exclude_accounts.join('・')}</span>` : '';
+    const periodLabel = summary.check_until_input
+      ? summary.check_until_input   // "2026-05-20" のような日付
+      : (summary.check_until || '');
+    const periodBadge = periodLabel
+      ? `<span style="background:#fef5ed;color:#c05810;border-radius:6px;padding:2px 8px;font-size:.73rem;font-weight:600;">📅 〜${periodLabel}まで</span>` : '';
+
     document.getElementById('metaInfo').innerHTML = `
       <span>📁 <strong>${summary.software}</strong></span>
-      <span>📅 期間: <strong>${summary.date_range.start} ～ ${summary.date_range.end}</strong></span>
-      <span>📋 仕訳件数: <strong>${summary.total_entries.toLocaleString()}件</strong></span>
+      <span>📅 <strong>${summary.date_range.start} ～ ${summary.date_range.end}</strong></span>
+      <span>📋 仕訳 <strong>${summary.total_entries.toLocaleString()}件</strong></span>
+      ${obBadge} ${priorBadge} ${excl} ${periodBadge}
     `;
 
-    // サマリーカード
+    // サマリー
+    const yoyCount = issues.filter(i => i.category === '前年比' || i.category === '前年比(BS)').length;
     document.getElementById('summaryGrid').innerHTML = `
-      <div class="summary-card card-error">
-        <div class="count">${summary.error}</div>
-        <div class="label">🔴 要修正</div>
-      </div>
-      <div class="summary-card card-warning">
-        <div class="count">${summary.warning}</div>
-        <div class="label">🟡 要確認</div>
-      </div>
-      <div class="summary-card card-info">
-        <div class="count">${summary.info}</div>
-        <div class="label">🔵 提案・確認</div>
-      </div>
-      <div class="summary-card card-total">
-        <div class="count">${summary.error + summary.warning + summary.info}</div>
-        <div class="label">📊 指摘合計</div>
-      </div>
+      <div class="sc c-err"><div class="n">${summary.error}</div><div class="lbl">🔴 要修正</div></div>
+      <div class="sc c-wrn"><div class="n">${summary.warning}</div><div class="lbl">🟡 要確認</div></div>
+      <div class="sc c-inf"><div class="n">${summary.info}</div><div class="lbl">🔵 提案・確認</div></div>
+      <div class="sc c-tot"><div class="n">${summary.error+summary.warning+summary.info}</div><div class="lbl">📊 合計</div></div>
     `;
 
-    // フィルタータブ
+    const cat1 = issues.filter(i => i.check_id?.startsWith('1')).length;
+    const cat2 = issues.filter(i => i.check_id?.startsWith('2')).length;
+    const cat3 = issues.filter(i => i.check_id?.startsWith('3')).length;
+    const cat4 = issues.filter(i => i.check_id?.startsWith('4')).length;
+    const cat5 = issues.filter(i => i.check_id?.startsWith('5')).length;
+
     document.getElementById('filterTabs').innerHTML = `
-      <div class="tab all active" onclick="filterIssues('all', this)">すべて</div>
-      <div class="tab error" onclick="filterIssues('error', this)">🔴 要修正 (${summary.error})</div>
-      <div class="tab warning" onclick="filterIssues('warning', this)">🟡 要確認 (${summary.warning})</div>
-      <div class="tab info" onclick="filterIssues('info', this)">🔵 提案 (${summary.info})</div>
+      <div class="tab all active" onclick="filt('all',this)">すべて</div>
+      <div class="tab error"      onclick="filt('error',this)">🔴 要修正 (${summary.error})</div>
+      <div class="tab warning"    onclick="filt('warning',this)">🟡 要確認 (${summary.warning})</div>
+      <div class="tab info"       onclick="filt('info',this)">🔵 提案 (${summary.info})</div>
+      ${yoyCount > 0 ? `<div class="tab yoy" onclick="filt('yoy',this)">📈 前年比 (${yoyCount})</div>` : ''}
+      ${cat1 > 0 ? `<div class="tab" style="background:#f0f9ff;color:#0369a1;border:2px solid #bae6fd;" onclick="filt('cat1',this)">📋 網羅性 (${cat1})</div>` : ''}
+      ${cat2 > 0 ? `<div class="tab" style="background:#fff7ed;color:#c2410c;border:2px solid #fed7aa;" onclick="filt('cat2',this)">🧾 消費税 (${cat2})</div>` : ''}
+      ${cat3 > 0 ? `<div class="tab" style="background:#f0fdf4;color:#15803d;border:2px solid #bbf7d0;" onclick="filt('cat3',this)">🏗️ 資産 (${cat3})</div>` : ''}
+      ${cat4 > 0 ? `<div class="tab" style="background:#fdf4ff;color:#7e22ce;border:2px solid #e9d5ff;" onclick="filt('cat4',this)">💰 債権債務 (${cat4})</div>` : ''}
+      ${cat5 > 0 ? `<div class="tab" style="background:#fff1f2;color:#be123c;border:2px solid #fecdd3;" onclick="filt('cat5',this)">⚠️ 税務 (${cat5})</div>` : ''}
     `;
 
-    // 指摘リスト
-    window._allIssues = issues;
+    window._issues      = issues;
+    window._lastSummary = summary;
     renderIssues(issues);
-
     document.getElementById('results').style.display = 'block';
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
   }
 
   function renderIssues(issues) {
-    const icons = { error: '🔴', warning: '🟡', info: '🔵' };
-    const labels = { error: '要修正', warning: '要確認', info: '提案' };
-
-    if (issues.length === 0) {
-      document.getElementById('issueList').innerHTML = `
-        <div class="empty-state">
-          <div class="icon">✅</div>
-          <p>このカテゴリの指摘はありません</p>
-        </div>`;
+    const icons  = { error:'🔴', warning:'🟡', info:'🔵' };
+    const labels = { error:'要修正', warning:'要確認', info:'提案' };
+    if (!issues.length) {
+      document.getElementById('issueList').innerHTML =
+        '<div class="empty"><div class="icon">✅</div><p>このカテゴリの指摘はありません</p></div>';
       return;
     }
-
-    document.getElementById('issueList').innerHTML = issues.map(issue => `
-      <div class="issue-card ${issue.level}">
-        <div class="issue-icon">${icons[issue.level]}</div>
-        <div class="issue-body">
-          <div class="issue-header">
-            <span class="badge badge-${issue.level}">${labels[issue.level]}</span>
-            <span class="badge badge-category">${issue.category}</span>
-            <span class="badge badge-account">${issue.account}</span>
-            <span class="badge badge-month">${issue.month}</span>
+    document.getElementById('issueList').innerHTML = issues.map(i => `
+      <div class="ic ${i.level}">
+        <div class="ic-icon">${icons[i.level] || '📌'}</div>
+        <div class="ic-body">
+          <div class="ic-head">
+            <span class="bdg b-${i.level}">${labels[i.level] || i.level}</span>
+            <span class="bdg b-cat">${i.category}</span>
+            <span class="bdg b-acc">${i.account}</span>
+            <span class="bdg b-mon">${i.month}</span>
+            ${i.slip ? `<span class="bdg b-mon">伝票No. ${i.slip}</span>` : ''}
           </div>
-          <div class="issue-message">${issue.message}</div>
+          <div class="ic-msg">${i.message}</div>
         </div>
       </div>
     `).join('');
   }
 
-  function filterIssues(level, el) {
+  async function exportXLSX() {
+    if (!window._issues || window._issues.length === 0) {
+      alert('チェック結果がありません。先にチェックを実行してください。');
+      return;
+    }
+    // 対象月を生成
+    const summary = window._lastSummary || {};
+    const end     = summary.check_until || summary.date_range?.end?.slice(0,7) || '';
+    let period = '';
+    if (end && end.length >= 7) {
+      const [y, m] = end.split('-');
+      period = `${y}年${parseInt(m)}月分`;
+    }
+
+    try {
+      const res = await fetch('/api/export-xlsx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          issues:      window._issues,
+          period:      period,
+          client_name: currentClient || '',
+        }),
+      });
+      if (!res.ok) throw new Error('CSV生成に失敗しました');
+
+      const blob     = await res.blob();
+      const url      = URL.createObjectURL(blob);
+      const filename = `チェックシート_${currentClient || ''}_${period}.xlsx`;
+      const a        = document.createElement('a');
+      a.href         = url;
+      a.download     = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch(e) {
+      alert('エラー: ' + e.message);
+    }
+  }
+
+  function filt(key, el) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
-    const filtered = level === 'all' ? window._allIssues : window._allIssues.filter(i => i.level === level);
+    const filtered =
+      key === 'all'  ? window._issues :
+      key === 'yoy'  ? window._issues.filter(i => ['前年比','前年比(BS)'].includes(i.category)) :
+      key === 'cat1' ? window._issues.filter(i => i.check_id?.startsWith('1')) :
+      key === 'cat2' ? window._issues.filter(i => i.check_id?.startsWith('2')) :
+      key === 'cat3' ? window._issues.filter(i => i.check_id?.startsWith('3')) :
+      key === 'cat4' ? window._issues.filter(i => i.check_id?.startsWith('4')) :
+      key === 'cat5' ? window._issues.filter(i => i.check_id?.startsWith('5')) :
+      window._issues.filter(i => i.level === key);
     renderIssues(filtered);
   }
+</script>
+
+<!-- Flatpickr JS + 日本語ロケール -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ja.js"></script>
+<script>
+  // カレンダーを初期化
+  const fpInstance = flatpickr("#checkUntilInput", {
+    locale: "ja",
+    dateFormat: "Y-m-d",
+    allowInput: true,
+    disableMobile: false,
+    onReady: function(_, __, fp) {
+      // クリアボタンのカスタマイズ
+      const clearBtn = document.getElementById('clearPeriodBtn');
+      if (clearBtn) clearBtn.addEventListener('click', () => fp.clear());
+    },
+    onChange: function(dates, dateStr) {
+      const label = document.getElementById('checkUntilLabel');
+      if (dateStr && label) {
+        const d = dates[0];
+        label.textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日まで`;
+        label.style.color = '#c05810';
+        label.style.fontWeight = '600';
+      } else if (label) {
+        label.textContent = '日付を選択';
+        label.style.color = '#9a7060';
+        label.style.fontWeight = 'normal';
+      }
+    }
+  });
 </script>
 </body>
 </html>

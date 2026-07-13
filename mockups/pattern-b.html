@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Pattern B - サンセットオレンジ</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Hiragino Sans", "Meiryo", sans-serif; background: #1a1008; color: #fdf0e0; }
+
+header {
+  background: linear-gradient(135deg, #ff6b00, #ff9a3c, #ffb347);
+  color: white; padding: 20px 32px;
+  display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 4px 20px rgba(255,107,0,.4);
+}
+header h1   { font-size: 1.4rem; font-weight: 800; letter-spacing: .03em; }
+header .sub { font-size: 0.83rem; opacity: 0.9; margin-top: 2px; }
+
+.container { max-width: 860px; margin: 0 auto; padding: 28px 16px; }
+
+.card { background: #2a1a08; border-radius: 12px; padding: 24px 28px; margin-bottom: 18px;
+  border: 1px solid #4a2e10; }
+.card-title { font-size: .95rem; font-weight: 700; color: #ff9a3c; margin-bottom: 16px; }
+
+select, input[type=text] {
+  width: 100%; padding: 9px 12px;
+  border: 1.5px solid #5a3a18; border-radius: 8px; font-size: .9rem;
+  background: #3a2010; color: #fdf0e0;
+}
+
+.client-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.label { font-size: .78rem; color: #c0804a; font-weight: 600; margin-bottom: 4px; }
+.new-area { background: #3a2010; border: 1px solid #5a3a18; border-radius: 10px; padding: 16px; margin-top: 12px; }
+
+.drop { border: 2px dashed #ff6b00; border-radius: 12px; padding: 40px 20px;
+  text-align: center; background: linear-gradient(145deg, #2a1808, #3a2010); cursor: pointer; margin-bottom: 14px; }
+.drop .icon { font-size: 2.8rem; margin-bottom: 10px; }
+.drop .title { font-size: 1.05rem; font-weight: 700; color: #ff9a3c; margin-bottom: 6px; }
+.drop .hint  { font-size: .83rem; color: #c09070; line-height: 1.7; }
+
+.btn-primary   { background: linear-gradient(135deg, #ff6b00, #ff9a3c); color: white; border: none;
+  padding: 12px 30px; border-radius: 8px; font-size: .95rem; font-weight: 700; cursor: pointer;
+  box-shadow: 0 3px 12px rgba(255,107,0,.4); }
+.btn-secondary { background: transparent; color: #ff9a3c; border: 1.5px solid #ff6b00;
+  padding: 11px 22px; border-radius: 8px; font-size: .9rem; font-weight: 600; cursor: pointer; }
+.row { display: flex; gap: 10px; align-items: center; }
+
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+.sc { background: #2a1a08; border-radius: 10px; padding: 18px; text-align: center;
+  border: 1px solid #4a2e10; }
+.sc .n   { font-size: 2.3rem; font-weight: 800; }
+.sc .lbl { font-size: .8rem; color: #907050; margin-top: 4px; }
+.c-err .n { color: #ff6b6b; } .c-wrn .n { color: #ffd93d; }
+.c-inf .n { color: #ff9a3c; } .c-tot .n { color: #ff6b00; }
+.c-tot { border-color: #ff6b00; box-shadow: 0 0 12px rgba(255,107,0,.2); }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.tab { padding: 5px 16px; border-radius: 20px; font-size: .83rem; font-weight: 500; cursor: pointer; }
+.tab.all    { background: #ff6b00; color: white; font-weight: 700; }
+.tab.error  { background: #3a1010; color: #ff6b6b; border: 1px solid #7a2020; }
+.tab.warn   { background: #3a3010; color: #ffd93d; border: 1px solid #7a6a10; }
+.tab.info   { background: #3a2010; color: #ff9a3c; border: 1px solid #7a4a10; }
+
+.issue-card { background: #2a1a08; border-radius: 10px; padding: 14px 18px; margin-bottom: 10px;
+  border: 1px solid #4a2e10; border-left: 4px solid; display: flex; gap: 12px; }
+.issue-card.error   { border-left-color: #ff6b6b; }
+.issue-card.warning { border-left-color: #ffd93d; }
+.issue-card.info    { border-left-color: #ff9a3c; }
+.bdg { padding: 2px 8px; border-radius: 10px; font-size: .72rem; font-weight: 600; }
+.b-err  { background: #3a1010; color: #ff8080; }
+.b-warn { background: #3a3010; color: #ffd93d; }
+.b-cat  { background: #3a2010; color: #ff9a3c; }
+.b-acc  { background: #2a1808; color: #c07030; }
+.b-mon  { background: #2a2808; color: #c0a030; }
+.ic-msg { font-size: .88rem; line-height: 1.65; color: #d0b090; margin-top: 5px; }
+
+.saved-row { display:flex;align-items:center;gap:8px;background:#2a1808;padding:7px 12px;border-radius:7px;border:1px solid #5a3a18;font-size:.83rem;margin-bottom:6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>📊</div>
+  <div>
+    <h1>会計データチェックシステム</h1>
+    <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div style="text-align:center;margin-bottom:20px;">
+    <span style="background:linear-gradient(135deg,#ff6b00,#ffb347);color:white;padding:6px 20px;border-radius:20px;font-weight:700;font-size:.95rem;">
+      Pattern B ── ダークサンセット
+    </span>
+    <p style="color:#c09060;font-size:.82rem;margin-top:6px;">ダーク背景 × 鮮やかなオレンジグラデーション。モダン・スタイリッシュ</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🏢 クライアント選択</div>
+    <div class="client-row">
+      <div style="flex:1;">
+        <div class="label">保存済みクライアント</div>
+        <select><option>サンブルームコスメ株式会社</option></select>
+      </div>
+      <div style="color:#ff6b00;padding-top:18px;">または</div>
+      <div style="flex:1;">
+        <div class="label">新規クライアント名</div>
+        <input type="text" placeholder="例: 万代建材株式会社">
+      </div>
+    </div>
+    <div class="new-area">
+      <div style="font-size:.85rem;font-weight:700;color:#ff9a3c;margin-bottom:8px;">✅ 保存済みの前期データ</div>
+      <div class="saved-row"><span>✅</span><span style="flex:1;color:#ff9a3c;font-weight:500;">前期仕訳帳</span><span style="color:#907050;font-size:.75rem;">前期仕訳.txt</span></div>
+      <div class="saved-row"><span>✅</span><span style="flex:1;color:#ff9a3c;font-weight:500;">前期首試算表</span><span style="color:#907050;font-size:.75rem;">前期期首残高.txt</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📂 当期ファイルをアップロード</div>
+    <div class="drop">
+      <div class="icon">📄</div>
+      <div class="title">当期仕訳帳 CSV をドロップ</div>
+      <div class="hint">
+        <strong style="color:#ffb347;">当期仕訳帳のみ</strong>でOKです（弥生 / freee / MoneyForward）<br>
+        <span style="color:#ff9a3c;">✅ 当期首残高は前期データから自動導出されます</span>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn-primary">チェック実行</button>
+      <button class="btn-secondary">サンプルで試す</button>
+    </div>
+  </div>
+
+  <div class="summary-grid">
+    <div class="sc c-err"><div class="n">3</div><div class="lbl">🔴 要修正</div></div>
+    <div class="sc c-wrn"><div class="n">18</div><div class="lbl">🟡 要確認</div></div>
+    <div class="sc c-inf"><div class="n">12</div><div class="lbl">🟠 提案</div></div>
+    <div class="sc c-tot"><div class="n">33</div><div class="lbl">📊 合計</div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab all">すべて</div>
+    <div class="tab error">🔴 要修正 (3)</div>
+    <div class="tab warn">🟡 要確認 (18)</div>
+    <div class="tab info">🟠 提案 (12)</div>
+  </div>
+
+  <div class="issue-card error">
+    <div>🔴</div>
+    <div style="flex:1;">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;">
+        <span class="bdg b-err">要修正</span><span class="bdg b-cat">2-2 決済手数料</span>
+        <span class="bdg b-acc">支払手数料</span><span class="bdg b-mon">2026-02</span>
+      </div>
+      <div class="ic-msg">【2-2・高】摘要「Amazon手数料」はEC決済手数料と思われますが、税区分が課税（10%）になっています。売上債権の譲渡にかかる手数料は非課税となります。</div>
+    </div>
+  </div>
+  <div class="issue-card warning">
+    <div>🟡</div>
+    <div style="flex:1;">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;">
+        <span class="bdg b-warn">要確認</span><span class="bdg b-cat">3-3 修繕費</span>
+        <span class="bdg b-acc">修繕費</span><span class="bdg b-mon">2026-01</span>
+      </div>
+      <div class="ic-msg">【3-3・高】修繕費に 523,490円 の計上があります。20万円以上の修繕は資本的支出として固定資産計上が必要な場合があります。</div>
+    </div>
+  </div>
+
+</div>
+</body></html>

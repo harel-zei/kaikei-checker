@@ -8,8 +8,9 @@ from typing import List, Dict, Any
 # 売上科目
 SALES_ACCOUNTS = ["売上", "売上高", "売上金額"]
 
-# 仕入科目
-COGS_ACCOUNTS = ["仕入", "仕入高", "売上原価", "製造原価"]
+# 仕入科目（棚卸高も含める: 期首商品棚卸高は借方/期末商品棚卸高は貸方で
+# 借方−貸方のネット計算により売上原価が正しく算出される）
+COGS_ACCOUNTS = ["仕入", "仕入高", "売上原価", "製造原価", "棚卸高"]
 
 # 毎月計上されるべき費用
 MONTHLY_FIXED_EXPENSES = ["減価償却費", "地代家賃", "リース料"]
@@ -26,8 +27,8 @@ def check_pl(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues = []
 
     issues.extend(_check_gross_profit_ratio(df))
-    issues.extend(_check_monthly_fixed_expenses(df))
-    issues.extend(_check_repair_expenses(df))
+    # 定例費用の計上漏れは completeness_checker の 1-1 に一本化（重複指摘を防ぐ）
+    # 修繕費の資産計上チェックは asset_checker の 3-3 に一本化（重複指摘を防ぐ）
     issues.extend(_check_misc_expenses(df))
     issues.extend(_check_month_over_month(df))
 
@@ -56,15 +57,25 @@ def _check_gross_profit_ratio(df: pd.DataFrame) -> List[Dict[str, Any]]:
     sales_pattern = "|".join(SALES_ACCOUNTS)
     cogs_pattern = "|".join(COGS_ACCOUNTS)
 
-    # 売上（貸方）
-    monthly_sales = df[
-        df["credit_account"].astype(str).str.contains(sales_pattern, na=False)
-    ].groupby(df["date"].dt.to_period("M"))["credit_amount"].sum()
+    period = df["date"].dt.to_period("M")
 
-    # 仕入（借方）
-    monthly_cogs = df[
-        df["debit_account"].astype(str).str.contains(cogs_pattern, na=False)
-    ].groupby(df["date"].dt.to_period("M"))["debit_amount"].sum()
+    # 売上 = 貸方 − 借方（売上値引・返品を控除したネット額）
+    sales_cr = df[
+        df["credit_account"].fillna("").astype(str).str.contains(sales_pattern, na=False)
+    ].groupby(period)["credit_amount"].sum()
+    sales_dr = df[
+        df["debit_account"].fillna("").astype(str).str.contains(sales_pattern, na=False)
+    ].groupby(period)["debit_amount"].sum()
+    monthly_sales = sales_cr.subtract(sales_dr, fill_value=0)
+
+    # 売上原価 = 借方 − 貸方（仕入値引・期末棚卸高を控除したネット額）
+    cogs_dr = df[
+        df["debit_account"].fillna("").astype(str).str.contains(cogs_pattern, na=False)
+    ].groupby(period)["debit_amount"].sum()
+    cogs_cr = df[
+        df["credit_account"].fillna("").astype(str).str.contains(cogs_pattern, na=False)
+    ].groupby(period)["credit_amount"].sum()
+    monthly_cogs = cogs_dr.subtract(cogs_cr, fill_value=0)
 
     if monthly_sales.empty:
         return issues
@@ -98,7 +109,11 @@ def _check_gross_profit_ratio(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "category": "PL",
                 "account": "粗利率",
                 "month": str(month),
-                "message": f"【要確認】{month} の粗利率が {ratio:.1f}% で、平均（{mean_ratio:.1f}%）から大きく乖離しています。{reason}。",
+                "message": (
+                    f"【要確認】{month} の粗利率が {ratio:.1f}% で、"
+                    f"期中平均（{mean_ratio:.1f}%）から大きく乖離しています。{reason}。"
+                    "※棚卸仕訳を決算月のみ計上している場合、月次粗利率は仕入ベースの簡易値です。"
+                ),
                 "detail": {
                     "sales": float(row["sales"]),
                     "cogs": float(row["cogs"]),
@@ -122,10 +137,14 @@ def _check_monthly_fixed_expenses(df: pd.DataFrame) -> List[Dict[str, Any]]:
         if entries.empty:
             continue
 
+        valid_dates = df["date"].dropna()
+        if valid_dates.empty:
+            continue
+
         monthly = entries.groupby(df["date"].dt.to_period("M"))["debit_amount"].sum()
         all_months = pd.period_range(
-            start=df["date"].dropna().min().to_period("M"),
-            end=df["date"].dropna().max().to_period("M"),
+            start=valid_dates.min().to_period("M"),
+            end=valid_dates.max().to_period("M"),
             freq="M"
         )
 
@@ -199,8 +218,10 @@ def _check_month_over_month(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """前月比較による異常値チェック（±50%超の変動を検出）"""
     issues = []
 
-    # 主要費用科目をチェック
-    target_accounts = ["給与", "外注費", "地代家賃", "広告宣伝費", "租税公課"]
+    # 毎月ほぼ一定であるべき費用のみを対象とする。
+    # 広告宣伝費はキャンペーンで変動が大きく、租税公課も月で変わるため対象外
+    # （これらはYoY累計チェックで比較する）。
+    target_accounts = ["給与", "外注費", "地代家賃"]
 
     for account in target_accounts:
         entries = df[
@@ -215,24 +236,27 @@ def _check_month_over_month(df: pd.DataFrame) -> List[Dict[str, Any]]:
         if len(monthly) < 2:
             continue
 
+        # 変動した月をまとめて1件に集約（科目ごとに何度も指摘しない）
+        changes = []
         for i in range(1, len(monthly)):
             prev = monthly.iloc[i - 1]
             curr = monthly.iloc[i]
             month = monthly.index[i]
-
             if prev == 0:
                 continue
-
             change_rate = (curr - prev) / prev * 100
-
             if abs(change_rate) > 50 and abs(curr - prev) > 50000:
-                direction = "増加" if change_rate > 0 else "減少"
-                issues.append({
-                    "level": "warning",
-                    "category": "PL",
-                    "account": account,
-                    "month": str(month),
-                    "message": f"【要確認】{account} が前月比 {change_rate:+.1f}% （{prev:,.0f}円 → {curr:,.0f}円）と大きく{direction}しています。原因を確認してください。",
-                })
+                changes.append(f"{month}：{change_rate:+.0f}%（{prev:,.0f}→{curr:,.0f}円）")
+
+        if changes:
+            issues.append({
+                "level": "warning", "category": "PL", "account": account,
+                "month": "全期間",
+                "message": (
+                    f"【要確認】{account} に前月比±50%超の変動が {len(changes)}ヶ月 あります: "
+                    + "、".join(changes[:12])
+                    + "。原因を確認してください。"
+                ),
+            })
 
     return issues
