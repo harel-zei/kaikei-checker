@@ -980,6 +980,7 @@
     if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
+      await warmupServer();
       const data = await fetchJSON('/api/check-auto', { method: 'POST', body: fd }, warmupOpts());
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
@@ -1070,6 +1071,7 @@
     if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
+      await warmupServer();
       const data = await fetchJSON('/api/freee/check', { method: 'POST', body: fd }, warmupOpts());
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
@@ -1078,16 +1080,38 @@
   async function runSample() {
     showLoading();
     try {
+      await warmupServer();
       const data = await fetchJSON('/api/sample', undefined, warmupOpts());
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
 
   function showLoading() {
-    document.getElementById('loading').style.display  = 'block';
+    const el = document.getElementById('loading');
+    el.style.display  = 'block';
     document.getElementById('results').style.display  = 'none';
+    setLoadingMsg('ファイルを解析・チェック中...');
+    // ローディングが画面外だと処理中か分からないので、見える位置までスクロール
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   function hideLoading() { document.getElementById('loading').style.display = 'none'; }
+
+  // 本処理の前にサーバーを起こす（/healthz を叩いて起動を待つ）。
+  // 起動が確認できてから重いアップロードを送るので、無駄な再送が無く確実。
+  async function warmupServer(maxWaitMs = 180000) {
+    const deadline = Date.now() + maxWaitMs;
+    let waited = false;
+    while (true) {
+      try {
+        const r = await fetch('/healthz', { cache: 'no-store' });
+        if (r.ok) { if (waited) setLoadingMsg('ファイルを解析・チェック中...'); return true; }
+      } catch (_) { /* 起動途中は接続失敗する */ }
+      if (Date.now() >= deadline) return false;
+      waited = true;
+      setLoadingMsg('サーバーを起動しています… そのままお待ちください（初回は30〜90秒かかります）');
+      await sleep(3000);
+    }
+  }
 
   // ── 結果表示 ──
   function renderResults(data) {
