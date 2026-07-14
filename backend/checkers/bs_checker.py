@@ -53,13 +53,16 @@ def check_bs(
     ob = opening_balances or {}
     excl = exclude_accounts or []
     last_month = estimate_last_complete_month(df)  # 最終会計入力月を推定
+    # 補助科目ごとのチェックで DataFrame 全体を何百回も再変換すると
+    # 取引先の多い会社で二乗的に遅くなるため、重い派生列を一度だけ作って使い回す。
+    ctx = _build_bs_ctx(df)
     issues = []
     issues.extend(_check_cash_balance(df, ob))
     # 除外科目を RECEIVABLE / PAYABLE リストから取り除く
     recv = [a for a in RECEIVABLE_ACCOUNTS if not any(e in a for e in excl)]
     pabl = [a for a in PAYABLE_ACCOUNTS    if not any(e in a for e in excl)]
-    issues.extend(_check_receivables_by_sub(df, ob, recv, "debit",  last_month))
-    issues.extend(_check_receivables_by_sub(df, ob, pabl, "credit", last_month))
+    issues.extend(_check_receivables_by_sub(df, ob, recv, "debit",  last_month, ctx))
+    issues.extend(_check_receivables_by_sub(df, ob, pabl, "credit", last_month, ctx))
     issues.extend(_check_tax_temp_accounts(df))
     issues.extend(_check_suspense_payments(df))
     # 借入金の返済予定表との照合は日常の定型作業であり、残高があるだけで
@@ -134,6 +137,19 @@ def _check_cash_balance(df: pd.DataFrame, ob: dict) -> List[Dict[str, Any]]:
 
 
 # ────────────────────────────────────────────────
+# 派生列の事前計算（補助科目ループで使い回す）
+# ────────────────────────────────────────────────
+def _build_bs_ctx(df: pd.DataFrame) -> dict:
+    """補助科目単位のチェックで毎回 DataFrame 全体を再変換するのを避けるため、
+    重い派生列（正規化した科目名・月次Period）を一度だけ計算して返す。"""
+    return {
+        "period":      df["date"].dt.to_period("M"),
+        "debit_norm":  df["debit_account"].astype(str).str.strip(),
+        "credit_norm": df["credit_account"].astype(str).str.strip(),
+    }
+
+
+# ────────────────────────────────────────────────
 # 売掛金・買掛金を補助科目（取引先）単位でチェック
 # ────────────────────────────────────────────────
 def _check_receivables_by_sub(
@@ -142,6 +158,7 @@ def _check_receivables_by_sub(
     accounts: List[str],
     normal_side: str,
     last_month: "pd.Period",
+    ctx: dict = None,
 ) -> List[Dict[str, Any]]:
     """
     売掛金・買掛金・未払金等を補助科目（取引先）単位でチェックする。
@@ -152,10 +169,12 @@ def _check_receivables_by_sub(
     例: base_acc="未払金" でヒットした "リース未払金（名鉄協商...）" は
         ob["リース未払金（名鉄協商...）"] で正しく期首残高が見つかる。
     """
+    if ctx is None:
+        ctx = _build_bs_ctx(df)
     issues = []
     for base_acc in accounts:
-        d_rows = df[df["debit_account"].astype(str).str.contains(base_acc, na=False)]
-        c_rows = df[df["credit_account"].astype(str).str.contains(base_acc, na=False)]
+        d_rows = df[ctx["debit_norm"].str.contains(base_acc, na=False)]
+        c_rows = df[ctx["credit_norm"].str.contains(base_acc, na=False)]
         if d_rows.empty and c_rows.empty:
             continue
 
@@ -170,8 +189,10 @@ def _check_receivables_by_sub(
         actual_accs.discard(""); actual_accs.discard("nan")
 
         for actual_acc in sorted(actual_accs):
-            d_acc = d_rows[d_rows["debit_account"].astype(str).str.strip() == actual_acc]
-            c_acc = c_rows[c_rows["credit_account"].astype(str).str.strip() == actual_acc]
+            # この勘定科目の行は1回だけ絞り込み、補助科目ループで使い回す
+            # （補助科目ごとに DataFrame 全体を再フィルタしない）
+            d_acc = d_rows[ctx["debit_norm"].loc[d_rows.index] == actual_acc]
+            c_acc = c_rows[ctx["credit_norm"].loc[c_rows.index] == actual_acc]
 
             subs = _collect_subs(d_acc, c_acc, df)
 
@@ -180,11 +201,13 @@ def _check_receivables_by_sub(
             check_issues: list = []
 
             if not subs:
-                _check_single_account(check_issues, df, actual_acc, None, ob, normal_side, last_month)
+                _check_single_account(check_issues, df, actual_acc, None, ob, normal_side, last_month, ctx,
+                                      d_base=d_acc, c_base=c_acc)
             else:
                 for sub in subs:
                     sub_issues: list = []
-                    _check_single_account(sub_issues, df, actual_acc, sub, ob, normal_side, last_month)
+                    _check_single_account(sub_issues, df, actual_acc, sub, ob, normal_side, last_month, ctx,
+                                          d_base=d_acc, c_base=c_acc)
                     for iss in sub_issues:
                         if iss.get("level") == "info" and "期首残高未提供" in iss.get("message", ""):
                             missing_subs.append(sub)
@@ -209,6 +232,9 @@ def _check_single_account(
     ob: dict,
     normal_side: str,
     last_month: "pd.Period",
+    ctx: dict = None,
+    d_base: pd.DataFrame = None,
+    c_base: pd.DataFrame = None,
 ) -> None:
     """
     1つの科目（補助科目）の月次残高を計算して異常を検出する。
@@ -235,15 +261,19 @@ def _check_single_account(
         opening = ob.get(base_acc, 0.0)
         opening_missing = (base_acc not in ob)
 
-    # 実際の勘定科目名（base_acc）でフィルタ
-    d_rows = df[df["debit_account"].astype(str).str.strip() == base_acc]
-    c_rows = df[df["credit_account"].astype(str).str.strip() == base_acc]
+    if ctx is None:
+        ctx = _build_bs_ctx(df)
+
+    # 実際の勘定科目名（base_acc）でフィルタ（事前計算した正規化列を使い回す）
+    # 呼び出し側で科目単位に絞り込み済みの行があればそれを使う（補助科目ループでの再フィルタ回避）
+    d_rows = d_base if d_base is not None else df[ctx["debit_norm"] == base_acc]
+    c_rows = c_base if c_base is not None else df[ctx["credit_norm"] == base_acc]
     d_sub, c_sub = _filter_sub(d_rows, c_rows, sub)
 
     if d_sub.empty and c_sub.empty:
         return
 
-    period = df["date"].dt.to_period("M")
+    period = ctx["period"]
 
     # 月次借方・貸方を集計
     monthly_d = d_sub.groupby(period.loc[d_sub.index])["debit_amount"].sum()
