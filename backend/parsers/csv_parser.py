@@ -3,6 +3,7 @@
 対応: 弥生会計（ヘッダーなし独自形式）, freee, MoneyForward
 """
 import pandas as pd
+import csv
 import io
 import re
 from typing import Optional
@@ -45,7 +46,77 @@ def parse_yayoi_raw(content: str) -> pd.DataFrame:
     [0]コード [1]伝票番号 [2]空 [3]日付 [4]借方科目 [5]借方補助 [6]空
     [7]借方税区分 [8]借方金額 [9]借方消費税額 [10]貸方科目 [11]貸方補助 [12]空
     [13]貸方税区分 [14]貸方金額 [15]貸方消費税額 [16]摘要
+
+    ファイル全体を csv.reader（C実装）で一括パースし、列ごとにベクトル化して処理する。
+    （旧実装は1行ずつ pd.read_csv を呼び出しており、2万行規模で30秒以上を要した）
     """
+    WIDTH = 17  # 実データの列数
+    try:
+        # csv.reader は引用符・埋め込みカンマ・複数行フィールドを正しく処理する。
+        # 旧実装同様「フィールド数15未満の行は除外」する（ヘッダ・端数行などのノイズ対策）。
+        recs = [r for r in csv.reader(io.StringIO(content)) if len(r) >= 15]
+    except Exception:
+        # 一括パースに失敗した場合は従来の行単位パースにフォールバック
+        return _parse_yayoi_raw_linewise(content)
+
+    if not recs:
+        return pd.DataFrame()
+
+    # 各行を WIDTH 列に正規化（不足は空文字で埋め、超過は切り捨て）
+    norm = [(r + [""] * (WIDTH - len(r)))[:WIDTH] for r in recs]
+    raw = pd.DataFrame(norm, columns=list(range(WIDTH)))
+
+    def _s(i: int) -> pd.Series:
+        """指定列を文字列化し、前後空白と引用符を除去"""
+        return raw[i].astype(str).str.strip().str.strip('"')
+
+    def _n(i: int) -> pd.Series:
+        """指定列を数値化（カンマ除去、失敗は0.0）"""
+        return pd.to_numeric(
+            raw[i].astype(str).str.replace(",", "", regex=False).str.strip(),
+            errors="coerce",
+        ).fillna(0.0)
+
+    df = pd.DataFrame({
+        "date":           _parse_reiwa_series(_s(3)),
+        "slip_no":        _s(1),
+        "debit_account":  _s(4),
+        "debit_sub":      _s(5),
+        "debit_tax":      _s(7),
+        "debit_amount":   _n(8),
+        "debit_tax_amt":  _n(9),
+        "credit_account": _s(10),
+        "credit_sub":     _s(11),
+        "credit_tax":     _s(13),
+        "credit_amount":  _n(14),
+        "credit_tax_amt": _n(15),
+        "description":    _s(16),
+    })
+    df["debit_account"]  = df["debit_account"].replace("nan", "")
+    df["credit_account"] = df["credit_account"].replace("nan", "")
+    return df.reset_index(drop=True)
+
+
+def _parse_reiwa_series(s: pd.Series) -> pd.Series:
+    """日付列（`R.yy/mm/dd` 形式優先）をベクトル化して Timestamp に変換する。
+    parse_reiwa_date と同じ規則: R.形式は年+2018、それ以外は pd.to_datetime。"""
+    m = s.str.extract(r'R\.(\d{2})/(\d{2})/(\d{2})')
+    yy = pd.to_numeric(m[0], errors="coerce")
+    reiwa = pd.to_datetime(
+        {
+            "year":  yy + 2018,
+            "month": pd.to_numeric(m[1], errors="coerce"),
+            "day":   pd.to_numeric(m[2], errors="coerce"),
+        },
+        errors="coerce",
+    )
+    # R.形式に一致しない行のみ通常の日付解析にフォールバック
+    fallback = pd.to_datetime(s.where(yy.isna()), errors="coerce")
+    return reiwa.fillna(fallback)
+
+
+def _parse_yayoi_raw_linewise(content: str) -> pd.DataFrame:
+    """行単位パース（一括読み込みが失敗した場合のフォールバック）"""
     rows = []
     for line in content.split("\n"):
         line = line.strip()
