@@ -33,9 +33,7 @@ NON_PL_KEYWORDS = [
     "売掛金", "買掛金", "未払金", "未払費用", "未払法人税", "未払消費税",
     "前払費用", "前払金", "前受金", "前受収益", "未収入金", "未収収益",
     "仮払金", "仮受金", "仮払消費税", "仮受消費税", "預り金", "立替金",
-    "貸付金", "借入金", "未成工事",
-    # 棚卸資産
-    "商品", "製品", "原材料", "貯蔵品", "仕掛品",
+    "貸付金", "借入金", "未成工事支出金",
     # 固定資産・投資その他
     "建物", "構築物", "機械装置", "車両運搬具", "工具器具備品", "土地",
     "リース資産", "ソフトウェア", "のれん", "出資金", "有価証券",
@@ -45,10 +43,21 @@ NON_PL_KEYWORDS = [
     "事業主貸", "事業主借", "元入金", "未払配当金",
 ]
 
+# 棚卸資産（BS）だが、損益/製造原価の科目（商品仕入高・期末商品棚卸高 等）の
+# 部分文字列でもあるため、完全一致でのみ除外する。
+# 例）「商品」は除外するが「商品仕入高」「期末商品棚卸高」は損益項目として対象に含める。
+NON_PL_EXACT = {
+    "商品", "製品", "半製品", "原材料", "材料", "貯蔵品",
+    "仕掛品", "繰越商品", "副産物", "作業くず",
+}
+
 MIN_MONTHS   = 4      # 定期性を判定するのに必要な最小月数（これ未満なら判定しない）
 MIN_PRESENT  = 3      # 「定期」と見なすのに最低限必要な計上月数
 RECUR_RATIO  = 0.75   # 全月のうち何割以上に計上があれば「定期」と見なすか
 MIN_TYPICAL  = 1_000  # 月あたり典型額がこの額未満の科目はノイズとして除外
+
+# 補助科目が付いていない行をまとめる系列ラベル
+NO_SUB = "（補助科目なし）"
 
 
 def check_trend(df: pd.DataFrame, fiscal_cutoff_day: int = 1) -> List[Dict[str, Any]]:
@@ -70,8 +79,10 @@ def check_trend(df: pd.DataFrame, fiscal_cutoff_day: int = 1) -> List[Dict[str, 
 
 
 def _is_pl_account(name: str) -> bool:
-    """損益科目とみなせるか（空・決済・BS科目は除外）"""
+    """損益科目・製造原価科目とみなせるか（空・決済・BS科目は除外）"""
     if not name or name in ("nan", "None"):
+        return False
+    if name in NON_PL_EXACT:
         return False
     return not any(kw in name for kw in NON_PL_KEYWORDS)
 
@@ -149,7 +160,9 @@ def _check_6_2_subaccount(work: pd.DataFrame, all_periods: list) -> List[Dict[st
     rows["_sub"] = rows["debit_sub"].fillna("").astype(str).str.strip()
     pl_accounts = {a for a in rows["_acc"].unique() if _is_pl_account(a)}
     rows = rows[rows["_acc"].isin(pl_accounts)]
-    rows = rows[~rows["_sub"].isin(["", "nan", "None", "指定なし"])]
+    # 補助科目が付いていない行も対象にする（空欄は「（補助科目なし）」という1つの系列として扱う）
+    blank = rows["_sub"].isin(["", "nan", "None", "指定なし"])
+    rows.loc[blank, "_sub"] = NO_SUB
     if rows.empty:
         return issues
 
@@ -177,8 +190,8 @@ def _check_6_2_subaccount(work: pd.DataFrame, all_periods: list) -> List[Dict[st
             # 科目自体がその月に無い場合は 6-1 側の話なのでスキップ（科目は在るのに補助だけ無い月を検知）
             if p not in acc_present:
                 continue
-            # 1-4（固定リスト×直近月）が扱うケースは重複回避
-            if p == last_period and any(kw in account for kw in RECURRING_SUB_ACCOUNTS):
+            # 1-4（固定リスト×直近月×補助科目あり）が扱うケースは重複回避
+            if p == last_period and sub != NO_SUB and any(kw in account for kw in RECURRING_SUB_ACCOUNTS):
                 continue
             missing.append(p)
         if not missing:
@@ -186,14 +199,22 @@ def _check_6_2_subaccount(work: pd.DataFrame, all_periods: list) -> List[Dict[st
 
         s = ", ".join(str(m) for m in missing[:4])
         suffix = f"（他{len(missing)-4}ヶ月）" if len(missing) > 4 else ""
+        if sub == NO_SUB:
+            label = f"「{account}」（補助科目なし）"
+            tail = "この費用の計上がありません"
+            hint = "定期費用の計上漏れの可能性があります"
+        else:
+            label = f"{account}「{sub}」"
+            tail = "この取引先/補助科目の計上がありません"
+            hint = "定期取引の計上漏れ、または補助科目の付け忘れの可能性があります"
         issues.append({
             "level": "warning", "category": "6-2 定期取引の欠落",
             "check_id": "6-2", "account": account, "month": s,
             "message": (
-                f"【6-2・中】{account}「{sub}」は{n_present}ヶ月で計上（月額 約{typical:,.0f}円）"
-                f"されていますが、次の月は{account}に他の計上があるのにこの取引先/補助科目の計上がありません: "
-                f"{s}{suffix}。定期取引の計上漏れ、または補助科目の付け忘れの可能性があります。"
-                "（取引終了による場合は問題ありません）"
+                f"【6-2・中】{label}は{n_present}ヶ月で計上（月額 約{typical:,.0f}円）"
+                f"されていますが、次の月は{account}に他の計上があるのに{tail}: "
+                f"{s}{suffix}。{hint}。"
+                "（取引終了・契約終了による場合は問題ありません）"
             ),
         })
     return issues
