@@ -30,6 +30,7 @@ from checkers.tax_detail_checker import check_tax_detail
 from checkers.asset_checker import check_assets
 from checkers.ar_ap_checker import check_ar_ap
 from checkers.governance_checker import check_governance
+from checkers.trend_checker import check_trend
 from export_excel import build_checksheet_xlsx
 from client_store import (
     list_clients, save_prior_files, load_prior_files,
@@ -555,6 +556,7 @@ async def _run_checks(
         ("資産・修繕費", lambda: check_assets(df_checked)),
         ("債権債務",     lambda: check_ar_ap(df_checked)),
         ("ガバナンス",   lambda: check_governance(df_checked)),
+        ("損益推移",     lambda: check_trend(df_checked, fiscal_cutoff_day)),
     ]
     for _name, _fn in _checker_jobs:
         try:

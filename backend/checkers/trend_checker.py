@@ -1,0 +1,199 @@
+"""
+カテゴリ6: 損益推移分析による「定期取引の欠落」チェック
+
+仮想の損益推移表（勘定科目 × 月 の金額マトリクス）をデータから自動生成し、
+「毎月発生していた費用・取引が、ある月だけ計上されていない」欠落を検知する。
+
+既存の網羅性チェック（completeness_checker）との違い:
+  - 1-1 は「地代家賃・リース料…」など固定リストの科目のみが対象
+  - 1-4 は固定リストの補助科目、かつ「直近月だけ抜けた」ケースのみが対象
+  本チェックは対象を固定せず、データ自体から「毎月発生している科目・取引」を
+  推定し、全期間にわたって欠落月を検知する（データ駆動）。
+
+6-1: 勘定科目レベル ― 毎月計上されていた費用が、ある月に無い
+6-2: 補助科目レベル ― 毎月あった取引先/契約が、ある月に無い（科目自体は在る月）
+"""
+import pandas as pd
+from typing import List, Dict, Any
+
+# 既存チェックとの重複アラートを避けるため、固定リストを取り込む
+from checkers.completeness_checker import (
+    get_fiscal_period,
+    RECURRING_ACCOUNTS,       # 1-1 が扱う科目
+    RECURRING_SUB_ACCOUNTS,   # 1-4 が扱う科目
+)
+
+# ── 損益（PL）以外の科目を除外するためのキーワード ──
+# 損益推移表は損益科目を対象とするため、資産・負債・純資産・決済科目は除外する。
+# （これらは毎月出入りするため欠落しにくく、出しても意味が薄い）
+NON_PL_KEYWORDS = [
+    # 現預金・決済
+    "現金", "預金", "当座", "小口現金",
+    # 債権債務・経過勘定
+    "売掛金", "買掛金", "未払金", "未払費用", "未払法人税", "未払消費税",
+    "前払費用", "前払金", "前受金", "前受収益", "未収入金", "未収収益",
+    "仮払金", "仮受金", "仮払消費税", "仮受消費税", "預り金", "立替金",
+    "貸付金", "借入金", "未成工事",
+    # 棚卸資産
+    "商品", "製品", "原材料", "貯蔵品", "仕掛品",
+    # 固定資産・投資その他
+    "建物", "構築物", "機械装置", "車両運搬具", "工具器具備品", "土地",
+    "リース資産", "ソフトウェア", "のれん", "出資金", "有価証券",
+    "敷金", "差入保証金", "保証金", "建設仮勘定", "長期前払費用", "繰延資産",
+    # 純資産・事業主勘定
+    "資本金", "資本準備金", "利益準備金", "繰越利益", "自己株式",
+    "事業主貸", "事業主借", "元入金", "未払配当金",
+]
+
+MIN_MONTHS   = 4      # 定期性を判定するのに必要な最小月数（これ未満なら判定しない）
+MIN_PRESENT  = 3      # 「定期」と見なすのに最低限必要な計上月数
+RECUR_RATIO  = 0.75   # 全月のうち何割以上に計上があれば「定期」と見なすか
+MIN_TYPICAL  = 1_000  # 月あたり典型額がこの額未満の科目はノイズとして除外
+
+
+def check_trend(df: pd.DataFrame, fiscal_cutoff_day: int = 1) -> List[Dict[str, Any]]:
+    issues: List[Dict[str, Any]] = []
+    if "date" not in df.columns or df["date"].dropna().empty:
+        return issues
+
+    work = df.copy()
+    work["_fp"] = work["date"].apply(
+        lambda d: get_fiscal_period(d, fiscal_cutoff_day) if pd.notna(d) else pd.NaT
+    )
+    all_periods = sorted(p for p in work["_fp"].dropna().unique())
+    if len(all_periods) < MIN_MONTHS:
+        return issues  # 期間が短すぎて定期性を判定できない
+
+    issues.extend(_check_6_1_account(work, all_periods, fiscal_cutoff_day))
+    issues.extend(_check_6_2_subaccount(work, all_periods))
+    return issues
+
+
+def _is_pl_account(name: str) -> bool:
+    """損益科目とみなせるか（空・決済・BS科目は除外）"""
+    if not name or name in ("nan", "None"):
+        return False
+    return not any(kw in name for kw in NON_PL_KEYWORDS)
+
+
+# ──────────────────────────────────────────────────────────
+# 6-1: 勘定科目レベルの定期費用の欠落
+# ──────────────────────────────────────────────────────────
+def _check_6_1_account(work: pd.DataFrame, all_periods: list,
+                       fiscal_cutoff_day: int = 1) -> List[Dict[str, Any]]:
+    issues: List[Dict[str, Any]] = []
+    total = len(all_periods)
+    period_set = set(all_periods)
+
+    # 借方に計上のある損益科目だけを対象にする
+    rows = work[work["debit_amount"] != 0].copy()
+    rows["_acc"] = rows["debit_account"].fillna("").astype(str).str.strip()
+    # 科目名はユニーク数が少ないので、行単位ではなく科目単位で判定する（高速化）
+    pl_accounts = {a for a in rows["_acc"].unique() if _is_pl_account(a)}
+    rows = rows[rows["_acc"].isin(pl_accounts)]
+    if rows.empty:
+        return issues
+
+    # 科目 × 月 の金額合計（＝仮想の損益推移表）
+    pivot = rows.groupby(["_acc", "_fp"])["debit_amount"].sum()
+
+    for account, monthly in pivot.groupby(level=0):
+        # 1-1 が既に扱う定例科目はスキップ（重複アラート防止）
+        if any(kw in account for kw in RECURRING_ACCOUNTS):
+            continue
+
+        present = {p for (_, p) in monthly.index}
+        n_present = len(present)
+        # 「定期」判定: 十分な月数に計上があり、かつ欠落が存在する
+        if n_present < MIN_PRESENT or n_present >= total:
+            continue
+        if n_present / total < RECUR_RATIO:
+            continue
+
+        typical = float(monthly.median())
+        if typical < MIN_TYPICAL:
+            continue
+
+        missing = [p for p in all_periods if p not in present]
+        if not missing:
+            continue
+
+        s = ", ".join(str(m) for m in missing[:4])
+        suffix = f"（他{len(missing)-4}ヶ月）" if len(missing) > 4 else ""
+        note = f"（締め日:{fiscal_cutoff_day}日基準）" if fiscal_cutoff_day > 1 else ""
+        issues.append({
+            "level": "warning", "category": "6-1 定期費用の欠落",
+            "check_id": "6-1", "account": account, "month": s,
+            "message": (
+                f"【6-1・中】「{account}」は全{total}ヶ月中{n_present}ヶ月で計上（月額 約{typical:,.0f}円）"
+                f"されていますが、次の月には計上がありません: {s}{suffix}{note}。"
+                "毎月発生している費用の計上漏れ、または科目誤りの可能性があります。"
+                "（契約終了・季節性による場合は問題ありません）"
+            ),
+        })
+    return issues
+
+
+# ──────────────────────────────────────────────────────────
+# 6-2: 補助科目（取引先・契約）レベルの定期取引の欠落
+# ──────────────────────────────────────────────────────────
+def _check_6_2_subaccount(work: pd.DataFrame, all_periods: list) -> List[Dict[str, Any]]:
+    issues: List[Dict[str, Any]] = []
+    if "debit_sub" not in work.columns:
+        return issues
+    total = len(all_periods)
+    last_period = all_periods[-1]
+
+    rows = work[work["debit_amount"] != 0].copy()
+    rows["_acc"] = rows["debit_account"].fillna("").astype(str).str.strip()
+    rows["_sub"] = rows["debit_sub"].fillna("").astype(str).str.strip()
+    pl_accounts = {a for a in rows["_acc"].unique() if _is_pl_account(a)}
+    rows = rows[rows["_acc"].isin(pl_accounts)]
+    rows = rows[~rows["_sub"].isin(["", "nan", "None", "指定なし"])]
+    if rows.empty:
+        return issues
+
+    # その科目がどの月に計上されているか（科目自体の在籍月）
+    acc_months = rows.groupby("_acc")["_fp"].agg(lambda s: set(s.dropna())).to_dict()
+
+    grouped = rows.groupby(["_acc", "_sub", "_fp"])["debit_amount"].sum()
+    for (account, sub), monthly in grouped.groupby(level=[0, 1]):
+        present = {p for (_, _, p) in monthly.index}
+        n_present = len(present)
+        if n_present < MIN_PRESENT or n_present >= total:
+            continue
+        if n_present / total < RECUR_RATIO:
+            continue
+
+        typical = float(monthly.median())
+        if typical < MIN_TYPICAL:
+            continue
+
+        acc_present = acc_months.get(account, set())
+        missing = []
+        for p in all_periods:
+            if p in present:
+                continue
+            # 科目自体がその月に無い場合は 6-1 側の話なのでスキップ（科目は在るのに補助だけ無い月を検知）
+            if p not in acc_present:
+                continue
+            # 1-4（固定リスト×直近月）が扱うケースは重複回避
+            if p == last_period and any(kw in account for kw in RECURRING_SUB_ACCOUNTS):
+                continue
+            missing.append(p)
+        if not missing:
+            continue
+
+        s = ", ".join(str(m) for m in missing[:4])
+        suffix = f"（他{len(missing)-4}ヶ月）" if len(missing) > 4 else ""
+        issues.append({
+            "level": "warning", "category": "6-2 定期取引の欠落",
+            "check_id": "6-2", "account": account, "month": s,
+            "message": (
+                f"【6-2・中】{account}「{sub}」は{n_present}ヶ月で計上（月額 約{typical:,.0f}円）"
+                f"されていますが、次の月は{account}に他の計上があるのにこの取引先/補助科目の計上がありません: "
+                f"{s}{suffix}。定期取引の計上漏れ、または補助科目の付け忘れの可能性があります。"
+                "（取引終了による場合は問題ありません）"
+            ),
+        })
+    return issues
