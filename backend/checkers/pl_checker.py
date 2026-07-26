@@ -2,7 +2,6 @@
 損益計算書（PL）チェックモジュール
 """
 import pandas as pd
-import numpy as np
 from typing import List, Dict, Any
 
 # 売上科目
@@ -11,12 +10,6 @@ SALES_ACCOUNTS = ["売上", "売上高", "売上金額"]
 # 仕入科目（棚卸高も含める: 期首商品棚卸高は借方/期末商品棚卸高は貸方で
 # 借方−貸方のネット計算により売上原価が正しく算出される）
 COGS_ACCOUNTS = ["仕入", "仕入高", "売上原価", "製造原価", "棚卸高"]
-
-# 毎月計上されるべき費用
-MONTHLY_FIXED_EXPENSES = ["減価償却費", "地代家賃", "リース料"]
-
-# 修繕費の資産計上判定基準（円）
-REPAIR_CAPITALIZATION_THRESHOLD = 200000
 
 # 雑費・支払手数料の肥大化判定（件数）
 MISC_COUNT_THRESHOLD = 20
@@ -33,21 +26,6 @@ def check_pl(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues.extend(_check_month_over_month(df))
 
     return issues
-
-
-def _get_monthly_amount(df: pd.DataFrame, accounts: List[str]) -> pd.Series:
-    """指定科目リストの月次合計を返す"""
-    pattern = "|".join(accounts)
-
-    debit = df[df["debit_account"].astype(str).str.contains(pattern, na=False)].groupby(
-        df["date"].dt.to_period("M")
-    )["debit_amount"].sum()
-
-    credit = df[df["credit_account"].astype(str).str.contains(pattern, na=False)].groupby(
-        df["date"].dt.to_period("M")
-    )["credit_amount"].sum()
-
-    return credit.subtract(debit, fill_value=0)  # 売上は貸方
 
 
 def _check_gross_profit_ratio(df: pd.DataFrame) -> List[Dict[str, Any]]:
@@ -121,73 +99,6 @@ def _check_gross_profit_ratio(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     "mean_ratio": float(mean_ratio),
                 }
             })
-
-    return issues
-
-
-def _check_monthly_fixed_expenses(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """毎月計上すべき費用の計上漏れチェック"""
-    issues = []
-
-    for account in MONTHLY_FIXED_EXPENSES:
-        entries = df[
-            df["debit_account"].astype(str).str.contains(account, na=False)
-        ]
-
-        if entries.empty:
-            continue
-
-        valid_dates = df["date"].dropna()
-        if valid_dates.empty:
-            continue
-
-        monthly = entries.groupby(df["date"].dt.to_period("M"))["debit_amount"].sum()
-        all_months = pd.period_range(
-            start=valid_dates.min().to_period("M"),
-            end=valid_dates.max().to_period("M"),
-            freq="M"
-        )
-
-        missing_months = [m for m in all_months if m not in monthly.index or monthly[m] == 0]
-
-        if missing_months:
-            months_str = ", ".join(str(m) for m in missing_months[:3])
-            suffix = f"（他{len(missing_months)-3}ヶ月）" if len(missing_months) > 3 else ""
-            issues.append({
-                "level": "warning",
-                "category": "PL",
-                "account": account,
-                "month": months_str,
-                "message": f"【要確認】{account} が計上されていない月があります：{months_str}{suffix}。毎月計上すべき費用のため、計上漏れの可能性があります。",
-            })
-
-    return issues
-
-
-def _check_repair_expenses(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """修繕費の資産計上要否チェック"""
-    issues = []
-
-    repair_entries = df[
-        df["debit_account"].astype(str).str.contains("修繕費", na=False)
-    ]
-
-    large_repairs = repair_entries[
-        repair_entries["debit_amount"] >= REPAIR_CAPITALIZATION_THRESHOLD
-    ]
-
-    for _, row in large_repairs.iterrows():
-        amount = row["debit_amount"]
-        date = row["date"]
-        desc = row.get("description", "")
-
-        issues.append({
-            "level": "warning",
-            "category": "PL",
-            "account": "修繕費",
-            "month": str(date.to_period("M")) if pd.notna(date) else "不明",
-            "message": f"【要確認】修繕費に {amount:,.0f}円 の大額計上があります（摘要: {desc}）。20万円以上の場合は資産計上の可能性があります。現状回復目的か価値向上目的かを確認してください。",
-        })
 
     return issues
 

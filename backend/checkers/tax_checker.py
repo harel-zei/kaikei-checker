@@ -48,18 +48,22 @@ def check_tax(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 
 def _check_non_taxable_accounts(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """資産・負債科目に課税区分が設定されていないか確認"""
+    """資産・負債科目に課税区分が設定されていないか確認（借方・貸方の両側）"""
     issues = []
 
-    for account in NON_TAXABLE_ACCOUNTS:
-        # 借方チェック
-        entries = df[
-            df["debit_account"].astype(str).str.contains(account, na=False)
-        ]
+    sides = []
+    if "debit_tax" in df.columns:
+        sides.append(("debit_account", "debit_tax", "借方"))
+    if "credit_tax" in df.columns:
+        sides.append(("credit_account", "credit_tax", "貸方"))
 
-        if "debit_tax" in df.columns:
+    for account in NON_TAXABLE_ACCOUNTS:
+        for acc_col, tax_col, side_label in sides:
+            entries = df[df[acc_col].astype(str).str.contains(account, na=False)]
+            if entries.empty:
+                continue
             taxed = entries[
-                entries["debit_tax"].astype(str).str.contains(r"課税|10%|8%", na=False)
+                entries[tax_col].astype(str).str.contains(r"課税|10%|8%", na=False)
             ]
             if not taxed.empty:
                 issues.append({
@@ -67,7 +71,7 @@ def _check_non_taxable_accounts(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     "category": "消費税",
                     "account": account,
                     "month": "全期間",
-                    "message": f"【要修正】{account} に課税区分が設定されている仕訳が {len(taxed)}件 あります。資産・負債科目は基本的に「対象外」とすべきです。",
+                    "message": f"【要修正】{account}（{side_label}）に課税区分が設定されている仕訳が {len(taxed)}件 あります。資産・負債科目は基本的に「対象外」とすべきです。",
                 })
 
     return issues
@@ -107,71 +111,4 @@ def _check_invoice_system(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return issues
 
 
-def _check_overseas_travel(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """
-    海外出張費が課税仕入になっているチェック。
-
-    修正方針:
-    - 課税仕入（10%）になっている場合のみ指摘（非課税・不課税はOK）
-    - 摘要から「明らかに海外」と判断できるもののみ対象
-      × 曖昧: 「JAL」「航空」「HOTEL」単独 → 国内の可能性あり
-      ○ 明確: 「海外出張」「海外ホテル」「USD」「EUR」など明示的なもの
-    - 1件ずつ個別に表示
-    """
-    issues = []
-
-    if "description" not in df.columns:
-        return issues
-
-    if "debit_tax" not in df.columns:
-        return issues
-
-    # 「明らかに海外」と判断できるキーワード（曖昧なものは除外）
-    KW_CLEARLY_OVERSEAS = [
-        "海外出張", "海外ホテル", "海外現地", "海外",
-        "USD", "EUR", "GBP", "CNY", "HKD", "SGD", "AUD",
-        "外貨", "国際線", "渡航",
-    ]
-
-    target_accounts = ["旅費交通費", "接待交際費", "会議費"]
-    # fillna("") でNaNを空文字に変換してから判定
-    acc_mask = df["debit_account"].fillna("").astype(str).apply(
-        lambda x: bool(x) and any(a in x for a in target_accounts)
-    )
-
-    def _is_clearly_overseas(text: str) -> bool:
-        t = str(text)
-        return any(k in t for k in KW_CLEARLY_OVERSEAS)
-
-    def _is_taxable_purchase(tax_val: str) -> bool:
-        """課税仕入（10%）かどうかを判定。非課税・不課税・免税はFalse"""
-        s = str(tax_val)
-        # 不課税・非課税・対象外・免税はOK（指摘しない）
-        if any(k in s for k in ["不課税", "非課税", "対象外", "免税"]):
-            return False
-        # 課税（10%）の場合のみTrue
-        if any(k in s for k in ["課税", "10%"]):
-            return True
-        return False
-
-    targets = df[
-        acc_mask &
-        df["description"].fillna("").astype(str).apply(_is_clearly_overseas) &
-        df["debit_tax"].astype(str).apply(_is_taxable_purchase)
-    ]
-
-    for _, row in targets.iterrows():
-        from checkers.check_utils import desc_safe, month_safe, slip_safe
-        issues.append({
-            "level": "warning",
-            "category": "消費税",
-            "account": str(row["debit_account"]),
-            "month": month_safe(row), "slip": slip_safe(row),
-            "message": (
-                f"【要確認】摘要「{desc_safe(row)}」は海外出張関連と思われますが、"
-                f"税区分が課税（{row['debit_tax']}）になっています。"
-                "海外での支出は消費税の課税対象外（不課税）となります。税区分を確認してください。"
-            ),
-        })
-
-    return issues
+# 海外出張費のチェックは tax_detail_checker の 2-6（海外渡航費）に一本化済み

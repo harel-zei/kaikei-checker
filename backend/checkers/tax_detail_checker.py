@@ -479,16 +479,19 @@ def _check_2_9_wire_fee_return(df: pd.DataFrame) -> List[Dict[str, Any]]:
         fee_entries["description"].astype(str).apply(_is_ar_wire_fee)
     ]
 
+    # 売掛金貸方の伝票番号・日付を事前に1回だけ収集（行ごとに再計算しない）
+    ar_credit_rows = df[df["credit_account"].astype(str).str.contains("売掛金", na=False)]
+    ar_credit_dates = set(ar_credit_rows["date"].dropna())
+    ar_credit_slips = (
+        set(ar_credit_rows["slip_no"].dropna().astype(str))
+        if "slip_no" in df.columns else set()
+    )
+
     # 該当行のインデックスを集める（件数が多くなるため最後に1件へ集約）
     hit_idx = set()
     for idx, row in fee_entries.iterrows():
-        has_ar = False
-        if "slip_no" in df.columns:
-            slip = str(row.get("slip_no", ""))
-            same_slip = df[df["slip_no"].astype(str) == slip]
-            has_ar = same_slip["credit_account"].astype(str).str.contains("売掛金", na=False).any()
+        has_ar = str(row.get("slip_no", "")) in ar_credit_slips
         if not has_ar:
-            ar_credit_dates = set(df[df["credit_account"].astype(str).str.contains("売掛金", na=False)]["date"].dropna())
             has_ar = pd.notna(row["date"]) and row["date"] in ar_credit_dates
         if has_ar:
             hit_idx.add(idx)

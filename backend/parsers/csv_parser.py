@@ -6,6 +6,7 @@ import pandas as pd
 import csv
 import io
 import re
+import warnings
 from typing import Optional
 
 
@@ -313,9 +314,19 @@ def _normalize(df: pd.DataFrame) -> pd.DataFrame:
             df[col].astype(str).str.replace(",", "").str.strip(),
             errors="coerce"
         ).fillna(0)
-    # 和暦（令和・平成等）を西暦に変換してから日付解析
-    df["date"] = df["date"].apply(_convert_jp_era)
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    # まず一括で日付解析し、解釈できなかった行のみ和暦（令和・平成等）変換を試す
+    # （全行に和暦変換を適用すると2万行規模で数百msかかるため）
+    raw_dates = df["date"]
+    with warnings.catch_warnings():
+        # 日付形式が混在するファイルで出る「Could not infer format」警告を抑制
+        warnings.simplefilter("ignore", UserWarning)
+        parsed = pd.to_datetime(raw_dates, errors="coerce")
+        mask = parsed.isna() & raw_dates.notna()
+        if mask.any():
+            parsed.loc[mask] = pd.to_datetime(
+                raw_dates[mask].apply(_convert_jp_era), errors="coerce"
+            )
+    df["date"] = parsed
     return df.reset_index(drop=True)
 
 

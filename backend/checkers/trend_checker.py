@@ -18,7 +18,7 @@ from typing import List, Dict, Any
 
 # 既存チェックとの重複アラートを避けるため、固定リストを取り込む
 from checkers.completeness_checker import (
-    get_fiscal_period,
+    fiscal_period_series,
     RECURRING_ACCOUNTS,       # 1-1 が扱う科目
     RECURRING_SUB_ACCOUNTS,   # 1-4 が扱う科目
 )
@@ -66,9 +66,7 @@ def check_trend(df: pd.DataFrame, fiscal_cutoff_day: int = 1) -> List[Dict[str, 
         return issues
 
     work = df.copy()
-    work["_fp"] = work["date"].apply(
-        lambda d: get_fiscal_period(d, fiscal_cutoff_day) if pd.notna(d) else pd.NaT
-    )
+    work["_fp"] = fiscal_period_series(work["date"], fiscal_cutoff_day)
     all_periods = sorted(p for p in work["_fp"].dropna().unique())
     if len(all_periods) < MIN_MONTHS:
         return issues  # 期間が短すぎて定期性を判定できない

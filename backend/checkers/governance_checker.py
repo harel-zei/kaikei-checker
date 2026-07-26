@@ -60,8 +60,10 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return issues
 
     # 4ヶ月目以降の変動チェック
-    base_months = monthly.iloc[:3]
-    base_amount = base_months.mean()
+    # 基準額は「期首3ヶ月目の額」を使う。定期同額給与は期首3ヶ月以内の改定が
+    # 認められており、正規の改定があった場合は改定後の額で以後同額となるべき。
+    # （3ヶ月平均を基準にすると、正規改定後の全月が誤検知になる）
+    base_amount = monthly.iloc[2]
     check_months = monthly.iloc[3:]
 
     # 変動した月をまとめて1件の指摘にする（月ごとに分けない）
@@ -73,7 +75,7 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
             "check_id": "5-1", "account": "役員報酬",
             "month": str(changed[0][0]),
             "message": (
-                f"【5-1・高】役員報酬が期初3ヶ月の平均額（{base_amount:,.0f}円）から"
+                f"【5-1・高】役員報酬が期首3ヶ月目の額（{base_amount:,.0f}円）から"
                 f"変動している月があります（{len(changed)}ヶ月）: {detail}。"
                 "定期同額給与は期首から3ヶ月以内の改定を除き、"
                 "変動があると損金不算入となる場合があります。"
@@ -147,10 +149,13 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     continue
 
                 # 摘要の類似度（簡易）― NaN対策でdesc_safeを使用
+                # 両方とも空欄の場合は「区別する情報がない同日・同科目・同額仕訳」
+                # として重複候補に含める（片方だけ空欄なら別取引とみなしスキップ）
                 desc_i = desc_safe(ri)
                 desc_j = desc_safe(rj)
-                if _simple_similarity(desc_i, desc_j) <= 0.6:
-                    continue
+                if desc_i or desc_j:
+                    if _simple_similarity(desc_i, desc_j) <= 0.6:
+                        continue
 
                 # ── 除外ルール ──────────────────────────────
                 # ① 往復交通費: 「A〜B」vs「B〜A」は行きと帰り

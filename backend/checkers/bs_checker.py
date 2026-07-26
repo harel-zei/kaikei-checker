@@ -9,7 +9,6 @@ import pandas as pd
 from typing import List, Dict, Any
 
 CASH_ACCOUNTS = ["現金", "小口現金", "普通預金", "当座預金", "定期預金", "定期積金"]
-TAX_TEMP      = ["仮払消費税", "仮受消費税"]
 
 # 補助科目単位でチェックする売掛・買掛系科目
 RECEIVABLE_ACCOUNTS = ["売掛金", "電子記録債権", "未収入金"]
@@ -63,10 +62,12 @@ def check_bs(
     pabl = [a for a in PAYABLE_ACCOUNTS    if not any(e in a for e in excl)]
     issues.extend(_check_receivables_by_sub(df, ob, recv, "debit",  last_month, ctx))
     issues.extend(_check_receivables_by_sub(df, ob, pabl, "credit", last_month, ctx))
-    issues.extend(_check_tax_temp_accounts(df))
     issues.extend(_check_suspense_payments(df))
-    # 借入金の返済予定表との照合は日常の定型作業であり、残高があるだけで
-    # 一律に指摘するとノイズになるため通知しない（_check_loan_repayment は無効化）
+    # 無効化したチェック（意図的に実施しない）:
+    # - 仮払消費税・仮受消費税の期首残高チェック: 通常の消費税仕訳と
+    #   期首繰越仕訳の区別が困難なため実施しない
+    # - 借入金の返済予定表との照合: 日常の定型作業であり、残高があるだけで
+    #   一律に指摘するとノイズになるため通知しない
     return issues
 
 
@@ -362,22 +363,6 @@ def _check_single_account(
 
 
 # ────────────────────────────────────────────────
-# 仮払消費税・仮受消費税
-# ────────────────────────────────────────────────
-def _check_tax_temp_accounts(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """
-    仮払消費税・仮受消費税の期首残高チェック。
-    ※ 通常の消費税仕訳（課税取引に伴う自動計上）は「期首残高」ではないため除外する。
-       本当の期首残高とは、期首日（最初の日付）以前から繰り越されたものを指す。
-       ここでは ob（期首残高辞書）に値があれば、その値が0でないことを確認する。
-       ob がない場合（期首残高ファイル未提供）はこのチェックをスキップする。
-    """
-    issues = []
-    return issues  # 通常の消費税仕訳と期首繰越仕訳の区別が困難なためスキップ
-    # ※ 仮払消費税の期首残高チェックは、期首残高ファイルの ob["仮払消費税"] を直接確認する方法に変更予定
-
-
-# ────────────────────────────────────────────────
 # 仮払金・前渡金
 # ────────────────────────────────────────────────
 def _check_suspense_payments(df: pd.DataFrame) -> List[Dict[str, Any]]:
@@ -404,27 +389,6 @@ def _check_suspense_payments(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "message": (
                     f"【要修正】摘要に「法人税」を含む{account}仕訳が {len(tax_ent)}件 あります。"
                     "「未払法人税等」を取り崩す仕訳に修正してください。"
-                ),
-            })
-    return issues
-
-
-# ────────────────────────────────────────────────
-# 借入金
-# ────────────────────────────────────────────────
-def _check_loan_repayment(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    issues = []
-    for account in ["短期借入金", "長期借入金"]:
-        d = df[df["debit_account"].astype(str).str.contains(account, na=False)]["debit_amount"].sum()
-        c = df[df["credit_account"].astype(str).str.contains(account, na=False)]["credit_amount"].sum()
-        balance = c - d
-        if balance > 0:
-            issues.append({
-                "level": "info", "category": "BS", "account": account, "month": "全期間",
-                "message": (
-                    f"【確認】{account} の残高が {balance:,.0f}円 あります。"
-                    "金融機関の返済予定表と残高を照合してください。"
-                    "長期借入金のうち1年以内返済分が短期借入金に振り替えられているかも確認が必要です。"
                 ),
             })
     return issues
