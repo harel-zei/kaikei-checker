@@ -1,0 +1,21 @@
+name: tests
+
+on:
+  push:
+    branches: [main, "deploy/**"]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # チェッカーのテストに必要な最小限のみインストール（高速化のため）
+      - name: Install dependencies
+        run: pip install pandas==2.2.3 numpy==2.1.3 pytest==8.3.4
+      - name: Run tests
+        run: pytest
