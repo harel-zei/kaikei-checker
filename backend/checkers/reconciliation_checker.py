@@ -45,6 +45,8 @@ MIN_DIFF_AMOUNT    = 100    # この額未満の差額は指摘しない（消�
 
 # 補助科目が付いていない行をまとめる系列ラベル
 NO_SUB = "（補助科目なし）"
+# 補助科目を合算した「科目全体」の系列を表す内部ラベル
+ACCOUNT_TOTAL = "__ACCOUNT_TOTAL__"
 
 
 def check_reconciliation(df: pd.DataFrame) -> List[Dict[str, Any]]:
@@ -106,29 +108,66 @@ def _collect_clearing_records(df: pd.DataFrame, periods: list) -> List[Dict[str,
             rec[side][period] = rec[side].get(period, 0.0) + float(amount)
 
     results = []
+    # 科目全体（補助科目を合算）の系列も作る。
+    # 計上時は補助科目を付け、支払時は付けない（またはその逆）という記帳が
+    # 実務では珍しくなく、補助科目単位だけで見ると計上と精算が別系列に
+    # 分かれてしまい差額を検知できないため。
+    totals: dict = {}
     for (acc, sub), rec in acc_map.items():
+        tot = totals.setdefault(acc, {"debit": {}, "credit": {}})
+        for side in ("debit", "credit"):
+            for period, amount in rec[side].items():
+                tot[side][period] = tot[side].get(period, 0.0) + amount
+
+    def _emit(acc: str, sub: str, rec: dict, label: str):
         is_credit_normal = any(a in acc for a in CREDIT_NORMAL_ACCOUNTS)
         # 計上側（正常残高が増える側）と精算側（取り崩す側）
-        accrual = rec["credit"] if is_credit_normal else rec["debit"]
-        settle = rec["debit"] if is_credit_normal else rec["credit"]
         results.append({
             "account": acc,
             "sub": sub,
-            "label": f"{acc}（{sub}）" if sub != NO_SUB else acc,
-            "accrual": accrual,
-            "settle": settle,
+            "label": label,
+            "accrual": rec["credit"] if is_credit_normal else rec["debit"],
+            "settle": rec["debit"] if is_credit_normal else rec["credit"],
         })
+
+    for (acc, sub), rec in acc_map.items():
+        _emit(acc, sub, rec, f"{acc}（{sub}）" if sub != NO_SUB else acc)
+    for acc, rec in totals.items():
+        # 補助科目が1つ（または無し）なら科目全体＝その補助科目なので重複させない
+        subs = {s for (a, s) in acc_map if a == acc}
+        if len(subs) > 1:
+            _emit(acc, ACCOUNT_TOTAL, rec, f"{acc}（科目全体）")
     return results
 
 
 # ──────────────────────────────────────────────────────────
 # 7-1: 経過勘定の未清算差額
 # ──────────────────────────────────────────────────────────
+def _d_series(accrual: dict, settle: dict, periods: list, lag: int) -> list:
+    """D[k] =（k-lag 月までの計上累計）−（k 月までの精算累計） を返す。
+
+    lag は精算のタイミング（0=当月精算, 1=翌月精算, 2=翌々月精算）。
+    正常に消込まれていれば D は毎月一定（その値は期首残高に相当）になる。
+    """
+    cum_accrual, cum_settle = 0.0, 0.0
+    accrual_hist, series = [], []
+    for i, p in enumerate(periods):
+        cum_accrual += accrual.get(p, 0.0)
+        accrual_hist.append(cum_accrual)
+        cum_settle += settle.get(p, 0.0)
+        base_idx = i - lag
+        prior_accrual = accrual_hist[base_idx] if base_idx >= 0 else 0.0
+        series.append(prior_accrual - cum_settle)
+    return series
+
+
 def _find_unsettled_differences(records: List[Dict[str, Any]],
                                 periods: list) -> List[Dict[str, Any]]:
     """
-    各月末の D =（前月までの計上累計）−（当月までの精算累計）を求め、
-    D が途中から変化して最後まで戻らないものを「未清算差額」として抽出する。
+    計上と精算の累計を突き合わせ、途中から生じて解消されない差額を抽出する。
+
+    精算のタイミング（当月・翌月・翌々月）は顧問先ごとに異なるため、
+    D が最も安定するタイミングを自動的に選ぶ。
     """
     diffs = []
     n = len(periods)
@@ -140,32 +179,41 @@ def _find_unsettled_differences(records: List[Dict[str, Any]],
         if len([v for v in settle.values() if v > 0]) < MIN_SETTLE_MONTHS:
             continue
 
-        # D[k] = 前月までの計上累計 − 当月までの精算累計
-        d_series = []
-        cum_accrual = 0.0
-        cum_settle = 0.0
-        prev_cum_accrual = 0.0
-        for p in periods:
-            prev_cum_accrual = cum_accrual
-            cum_accrual += accrual.get(p, 0.0)
-            cum_settle += settle.get(p, 0.0)
-            d_series.append(prev_cum_accrual - cum_settle)
+        # 精算タイミングを推定（D の取りうる値の種類が最も少ないものを選ぶ）
+        best = None
+        for lag in (0, 1, 2):
+            if lag >= n:
+                continue
+            series = _d_series(accrual, settle, periods, lag)
+            variety = len({round(d / MIN_DIFF_AMOUNT) for d in series})
+            if best is None or variety < best[0]:
+                best = (variety, lag, series)
+        if best is None:
+            continue
+        variety, lag, series = best
 
-        # 正常時に D が取る値（＝期首残高相当）を最頻値で推定する
-        rounded = [round(d) for d in d_series]
-        baseline = max(set(rounded), key=rounded.count)
+        # 安定した消込サイクルと言えない場合は判定しない（誤検知防止）
+        # 正常値 + 差額（最大2種類の変化）までを許容する
+        if variety > 3:
+            continue
 
-        diff = d_series[-1] - baseline
+        # 正常時の D（＝期首残高相当）。消込サイクルが立ち上がる lag 月目を基準にする
+        baseline = series[min(lag, n - 1)]
+
+        diff = series[-1] - baseline
         if abs(diff) < MIN_DIFF_AMOUNT:
             continue
-        # 最終月だけのズレは「当月分の支払がまだ」という正常な状態なので除外する。
-        # 前月時点でも同じズレが続いている＝解消されていない差額のみを対象とする。
-        if n < 2 or abs((d_series[-2] - baseline) - diff) >= MIN_DIFF_AMOUNT:
+
+        # 最終月だけのズレの扱い:
+        #   未精算方向（D が増加）→「当月分の支払がまだ」という正常な状態なので除外
+        #   過大精算方向（D が減少）→ 支払超過であり最終月でも異常
+        sustained = n >= 2 and abs((series[-2] - baseline) - diff) < MIN_DIFF_AMOUNT
+        if not sustained and diff > 0:
             continue
 
         # ズレが生じた月を特定する
         changed_at = None
-        for i, d in enumerate(d_series):
+        for i, d in enumerate(series):
             if abs((d - baseline) - diff) < MIN_DIFF_AMOUNT:
                 changed_at = periods[i]
                 break
@@ -178,7 +226,18 @@ def _find_unsettled_differences(records: List[Dict[str, Any]],
             "overpaid": diff < 0,
             "month": str(changed_at) if changed_at else "全期間",
         })
-    return diffs
+
+    return _dedupe(diffs)
+
+
+def _dedupe(diffs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """同じ科目で同額の差額が補助科目単位と科目全体の両方で出た場合、
+    補助科目単位（より具体的な方）だけを残す。"""
+    by_sub = {(d["account"], round(d["amount"])) for d in diffs if d["sub"] != ACCOUNT_TOTAL}
+    return [
+        d for d in diffs
+        if d["sub"] != ACCOUNT_TOTAL or (d["account"], round(d["amount"])) not in by_sub
+    ]
 
 
 def _build_7_1_issues(diffs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

@@ -339,6 +339,32 @@ def _check_6_3_by_description(work: pd.DataFrame, all_periods: list,
 # 定額のサブスクリプション等は「同じ科目・同じ金額」が毎月現れるという特徴が
 # あるため、金額をキーにしても定期取引を識別できる。
 AMOUNT_MAX_PER_MONTH = 1.5   # 1ヶ月あたりの平均出現回数の上限（多発する金額は定期取引でない）
+# 消費税の端数処理などで月によって数円ずれることがあるため、
+# 近い金額は「同じ定期取引」として束ねる
+AMOUNT_TOL_YEN = 10          # 許容する金額差（最低額）
+AMOUNT_TOL_RATE = 0.002      # 許容する金額差（金額に対する割合）
+
+
+def _cluster_amounts(amounts: list) -> dict:
+    """近い金額を同一グループとして束ね、{金額: 代表金額} の対応を返す"""
+    mapping = {}
+    if not amounts:
+        return mapping
+    ordered = sorted(amounts)
+    group = [ordered[0]]
+    for a in ordered[1:]:
+        start = group[0]
+        tol = max(AMOUNT_TOL_YEN, start * AMOUNT_TOL_RATE)
+        # 直前の金額とも、グループ先頭とも近い場合のみ同一グループにする
+        if a - group[-1] <= tol and a - start <= tol:
+            group.append(a)
+        else:
+            rep = group[len(group) // 2]
+            mapping.update({x: rep for x in group})
+            group = [a]
+    rep = group[len(group) // 2]
+    mapping.update({x: rep for x in group})
+    return mapping
 
 
 def _check_6_3b_by_amount(rows: pd.DataFrame, all_periods: list,
@@ -355,6 +381,13 @@ def _check_6_3b_by_amount(rows: pd.DataFrame, all_periods: list,
     work = work[work["_amt"] >= MIN_TYPICAL]
     if work.empty:
         return issues
+
+    # 科目ごとに近い金額を束ねる（消費税端数で数円ずれるケースへの対応）
+    amt_key = {}
+    for account, grp_acc in work.groupby("_acc"):
+        for amount, rep in _cluster_amounts(list(grp_acc["_amt"].unique())).items():
+            amt_key[(account, amount)] = rep
+    work["_amt"] = [amt_key[(a, v)] for a, v in zip(work["_acc"], work["_amt"])]
 
     grouped = work.groupby(["_acc", "_amt"])
     for (account, amount), grp in grouped:
