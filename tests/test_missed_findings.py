@@ -50,6 +50,23 @@ class TestDescriptionLevelGap:
         assert "2026-05" in hits[0]["month"]
         assert "日経電子版" in hits[0]["message"]
 
+    def test_blank_description_detected_by_amount(self):
+        """摘要が空欄でも、毎月同額であれば定期取引として識別し欠落を検知する。
+
+        弥生では摘要が未入力の仕訳も多く、摘要キーだけでは識別できない。
+        （実データで検知できなかった事象の再発防止）
+        """
+        rows = []
+        for m in range(1, 7):
+            _filler(m, rows)
+            if m != 5:
+                rows.append(je(f"2026-{m:02d}-25", "新聞図書費", "普通預金", 4277, desc=""))
+            rows.append(je(f"2026-{m:02d}-10", "新聞図書費", "現金", 1500 + m * 230,
+                           desc="書籍代"))
+        hits = _trend(rows, "6-3")
+        assert hits, "摘要が空欄の定期購読の欠落が検知されていない"
+        assert "4,277" in hits[0]["message"]
+
     def test_unstable_amount_not_flagged(self):
         """金額が毎月大きく変わる取引は定期購読ではないので指摘しない"""
         rows = []
@@ -58,6 +75,16 @@ class TestDescriptionLevelGap:
             if m != 4:
                 rows.append(je(f"2026-{m:02d}-15", "消耗品費", "現金", 1000 * m * 3,
                                desc="事務用品購入"))
+        assert not _trend(rows, "6-3")
+
+    def test_frequent_same_amount_not_flagged(self):
+        """同じ金額が月内に何度も現れる取引は定期取引ではないので指摘しない"""
+        rows = []
+        for m in range(1, 7):
+            _filler(m, rows)
+            for k in range(0 if m == 4 else 5):
+                rows.append(je(f"2026-{m:02d}-{10 + k:02d}", "旅費交通費", "現金", 1200,
+                               desc="交通費"))
         assert not _trend(rows, "6-3")
 
     def test_no_duplicate_with_6_1(self):
@@ -110,27 +137,36 @@ class TestDiscontinued:
 # ══════════════════════════════════════════════════════════
 # ③④ 7-1 / 7-2: 経過勘定の未清算差額と科目取り違え
 # ══════════════════════════════════════════════════════════
+# 経費精算は毎月金額が変動するのが実態のため、変動する金額でテストする
+EXPENSE_AMOUNTS = [48200, 51300, 49800, 50100, 52000, 47600]
+
+
 def _expense_settlement_rows(overpay_month=None, overpay=0):
-    """毎月50,000円を計上し翌月支払う経費精算のサイクルを作る"""
+    """毎月計上し翌月に支払う経費精算のサイクルを作る（金額は毎月変動）"""
     rows = []
     for m in range(1, 7):
-        rows.append(je(f"2026-{m:02d}-30", "給料手当", "未払費用", 50000,
+        # 日付は全ての月に存在する28日を使う（2/30 等の無効日付を避ける）
+        rows.append(je(f"2026-{m:02d}-28", "給料手当", "未払費用", EXPENSE_AMOUNTS[m - 1],
                        csub="経費精算(清水)", desc="経費精算計上"))
     for m in range(2, 7):
-        amt = 50000 + (overpay if m == overpay_month else 0)
+        amt = EXPENSE_AMOUNTS[m - 2] + (overpay if m == overpay_month else 0)
         rows.append(je(f"2026-{m:02d}-10", "未払費用", "普通預金", amt,
                        dsub="経費精算(清水)", desc="経費精算支払"))
     return rows
 
 
+# カード利用額も毎月変動する
+CARD_AMOUNTS = [118400, 131200, 109700, 124300, 127600, 115900]
+
+
 def _card_rows(extra_amount=0, extra_desc="", extra_slip=""):
-    """毎月120,000円のカード利用と引落のサイクルを作る"""
+    """毎月のカード利用と翌月引落のサイクルを作る（金額は毎月変動）"""
     rows = []
     for m in range(1, 7):
-        rows.append(je(f"2026-{m:02d}-28", "消耗品費", "未払金", 120000,
+        rows.append(je(f"2026-{m:02d}-27", "消耗品費", "未払金", CARD_AMOUNTS[m - 1],
                        csub="アメックスカード", desc="カード利用"))
     for m in range(2, 7):
-        rows.append(je(f"2026-{m:02d}-10", "未払金", "普通預金", 120000,
+        rows.append(je(f"2026-{m:02d}-10", "未払金", "普通預金", CARD_AMOUNTS[m - 2],
                        dsub="アメックスカード", desc="カード引落"))
     if extra_amount:
         rows.append(je("2026-05-31", "交際費", "未払金", extra_amount,
@@ -150,23 +186,43 @@ class TestUnsettledDifference:
         """計上と支払が一致していれば指摘しない"""
         assert not _recon(_expense_settlement_rows(), "7-1")
 
-    def test_multiple_months_unpaid_not_flagged(self):
-        """未払が月次計上額の整数倍（2ヶ月分等）なら正常として扱う"""
-        rows = []
-        for m in range(1, 7):
-            rows.append(je(f"2026-{m:02d}-30", "給料手当", "未払費用", 50000, csub="B社"))
-        for m in range(3, 7):
-            rows.append(je(f"2026-{m:02d}-10", "未払費用", "普通預金", 50000, dsub="B社"))
-        assert not _recon(rows, "7-1")
+    def test_variable_amounts_with_difference_detected(self):
+        """毎月の金額が変動していても差額を検知する。
 
-    def test_variable_amounts_not_flagged(self):
-        """毎月の計上額が大きく変動する科目は剰余に意味がないため対象外"""
+        経費精算やカード利用は毎月の金額が変動するのが実態であり、
+        「毎月ほぼ定額」を前提にした判定では実データを取りこぼす。
+        累計で突き合わせることで金額の変動に影響されずに判定する。
+        （実データで検知できなかった事象の再発防止）
+        """
+        rows = _expense_settlement_rows(overpay_month=5, overpay=8031)
+        hits = _recon(rows, "7-1")
+        assert hits, "金額が変動する経過勘定の差額が検知されていない"
+        assert "8,031" in hits[0]["message"]
+
+    def test_variable_amounts_clean_not_flagged(self):
+        """金額が毎月変動しても、計上と精算が対応していれば指摘しない"""
         rows = []
         for m in range(1, 7):
-            rows.append(je(f"2026-{m:02d}-30", "外注費", "未払金", 100000 * m, csub="変動社"))
+            rows.append(je(f"2026-{m:02d}-28", "外注費", "未払金", 100000 * m, csub="変動社"))
         for m in range(2, 7):
             rows.append(je(f"2026-{m:02d}-10", "未払金", "普通預金", 100000 * (m - 1),
                            dsub="変動社"))
+        assert not _recon(rows, "7-1")
+
+    def test_last_month_unpaid_not_flagged(self):
+        """期末月の支払がまだ行われていないのは正常（差額ではない）"""
+        rows = [r for r in _expense_settlement_rows()
+                if not (r["debit_account"] == "未払費用" and r["date"].startswith("2026-06"))]
+        assert not _recon(rows, "7-1")
+
+    def test_delayed_payment_resolved_not_flagged(self):
+        """支払が一時的に遅れても、翌月にまとめて精算されていれば指摘しない"""
+        rows = []
+        for m in range(1, 7):
+            rows.append(je(f"2026-{m:02d}-28", "給料手当", "未払費用", 50000, csub="Y社"))
+        # 3月は支払わず、4月に2ヶ月分をまとめて精算
+        for m, amt in ((2, 50000), (4, 100000), (5, 50000), (6, 50000)):
+            rows.append(je(f"2026-{m:02d}-10", "未払費用", "普通預金", amt, dsub="Y社"))
         assert not _recon(rows, "7-1")
 
 

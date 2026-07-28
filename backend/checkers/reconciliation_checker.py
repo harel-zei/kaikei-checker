@@ -2,22 +2,26 @@
 カテゴリ7: 経過勘定の消込整合チェック
 
 7-1: 経過勘定の未清算差額（計上と支払の差額）
-7-2: 同額の未清算差額の対応（科目の取り違えの可能性）
+7-2: 同額の仕訳との突き合わせ（科目の取り違えの可能性）
 
 BSチェック（bs_checker）との違い:
   bs_checker は「期首残高 + 当期増減」で残高を評価するため、
   補助科目の期首残高が提供されていない場合は誤検知を防ぐ目的で判定をスキップする。
   そのため「期首残高ファイルが無い顧問先」では補助科目単位の異常を検知できない。
 
-  本チェックは期首残高に依存しない。未払費用・預り金のような経過勘定は
-  「毎月計上され、翌月に同額が支払われる」サイクルを持つため、
-  当期の貸方合計と借方合計の差（当期ネット）は、正常なら
-  「月次計上額の整数倍」（＝未払で残っている月数分）になる。
-  そこから外れた端数は、計上額と支払額の差額を意味する。
+判定の考え方（期首残高に依存しない）:
+  未払費用・未払金のような経過勘定は「当月に計上し、翌月に支払う」サイクルを持つ。
+  したがって各月末時点で
+      D = （前月までの計上累計） −（当月までの精算累計）
+  は、正常であれば毎月同じ値になる（その値は期首残高に相当する）。
+  D が途中で変化したら、その変化額が「計上額と支払額の差額」を意味する。
 
-  例) 月額50,000円の経費精算を6ヶ月:
-      正常     → 貸方300,000 / 借方250,000 → ネット +50,000（1ヶ月分未払）→ 端数0
-      8,031円多く支払 → 貸方300,000 / 借方258,031 → ネット +41,969 → 端数8,031 → 検知
+  経費精算やカード利用のように毎月の金額が変動しても、累計で比較するため
+  正しく判定できる（金額が一定であることを前提にしない）。
+
+  例) 経費精算を毎月計上し翌月支払（金額は毎月変動）:
+      正常                → D は毎月一定  → 差額なし
+      5月に8,031円多く支払 → D が5月以降 8,031円ずれる → 差額として検知
 """
 import pandas as pd
 from typing import List, Dict, Any
@@ -34,12 +38,10 @@ CREDIT_NORMAL_ACCOUNTS = [
     "未払費用", "未払金", "預り金", "仮受金", "前受金", "前受収益",
 ]
 
-MIN_ACCRUAL_MONTHS = 3      # 計上が何ヶ月以上あれば「定期的な精算サイクル」とみなすか
+MIN_CYCLE_MONTHS   = 4      # 精算サイクルの判定に必要な最小月数
+MIN_ACCRUAL_MONTHS = 3      # 計上が何ヶ月以上あれば「定期的な計上」とみなすか
 MIN_SETTLE_MONTHS  = 2      # 精算（反対仕訳）が何ヶ月以上あるか
-MIN_MONTHLY_AMOUNT = 1_000  # 月次計上額がこの額未満はノイズとして除外
 MIN_DIFF_AMOUNT    = 100    # この額未満の差額は指摘しない（消費税端数等のノイズ抑制）
-DIFF_RATIO_MAX     = 0.5    # 端数が月次計上額のこの割合未満なら「未清算差額」とみなす
-ACCRUAL_STABLE_R   = 0.25   # 月次計上額のブレ許容（(最大-最小) <= 中央値*この値 で「定額計上」）
 
 # 補助科目が付いていない行をまとめる系列ラベル
 NO_SUB = "（補助科目なし）"
@@ -50,12 +52,17 @@ def check_reconciliation(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if df.empty or "date" not in df.columns or df["date"].dropna().empty:
         return issues
 
-    balances = _collect_clearing_balances(df)
-    if not balances:
+    periods = sorted(df["date"].dropna().dt.to_period("M").unique())
+    if len(periods) < MIN_CYCLE_MONTHS:
         return issues
 
-    issues.extend(_check_7_1_unsettled_difference(balances))
-    issues.extend(_check_7_2_amount_match(df, balances))
+    records = _collect_clearing_records(df, periods)
+    if not records:
+        return issues
+
+    diffs = _find_unsettled_differences(records, periods)
+    issues.extend(_build_7_1_issues(diffs))
+    issues.extend(_check_7_2_misposting(df, diffs))
     return issues
 
 
@@ -67,18 +74,12 @@ def _base_account(name: str) -> str:
     return ""
 
 
-def _collect_clearing_balances(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """
-    経過勘定を科目×補助科目ごとに集計し、当期ネット増減と月次計上額を返す。
-
-    Returns: [{account, sub, label, net, monthly, accrual_months, settle_months}, ...]
-      net … 正常残高側から見た当期ネット増減（負債側は貸方－借方）
-    """
+def _collect_clearing_records(df: pd.DataFrame, periods: list) -> List[Dict[str, Any]]:
+    """経過勘定を科目×補助科目ごとに、月次の計上額・精算額として集計する"""
     work = df.copy()
     work["_d_acc"] = work["debit_account"].fillna("").astype(str).str.strip()
     work["_c_acc"] = work["credit_account"].fillna("").astype(str).str.strip()
-    has_sub = "debit_sub" in work.columns and "credit_sub" in work.columns
-    if has_sub:
+    if "debit_sub" in work.columns and "credit_sub" in work.columns:
         work["_d_sub"] = work["debit_sub"].fillna("").astype(str).str.strip()
         work["_c_sub"] = work["credit_sub"].fillna("").astype(str).str.strip()
     else:
@@ -89,7 +90,6 @@ def _collect_clearing_balances(df: pd.DataFrame) -> List[Dict[str, Any]]:
     def _norm_sub(s: str) -> str:
         return NO_SUB if s in ("", "nan", "None", "指定なし") else s
 
-    # (実科目名, 補助科目) 単位で借方・貸方を集計
     acc_map: dict = {}
     for side, acc_col, sub_col, amt_col in (
         ("debit", "_d_acc", "_d_sub", "debit_amount"),
@@ -98,7 +98,9 @@ def _collect_clearing_balances(df: pd.DataFrame) -> List[Dict[str, Any]]:
         rows = work[(work[amt_col] != 0) & (work[acc_col].map(_base_account) != "")]
         if rows.empty:
             continue
-        grouped = rows.groupby([rows[acc_col], rows[sub_col].map(_norm_sub), rows["_fp"]])[amt_col].sum()
+        grouped = rows.groupby(
+            [rows[acc_col], rows[sub_col].map(_norm_sub), rows["_fp"]]
+        )[amt_col].sum()
         for (acc, sub, period), amount in grouped.items():
             rec = acc_map.setdefault((acc, sub), {"debit": {}, "credit": {}})
             rec[side][period] = rec[side].get(period, 0.0) + float(amount)
@@ -106,166 +108,172 @@ def _collect_clearing_balances(df: pd.DataFrame) -> List[Dict[str, Any]]:
     results = []
     for (acc, sub), rec in acc_map.items():
         is_credit_normal = any(a in acc for a in CREDIT_NORMAL_ACCOUNTS)
-        # 計上側（正常残高が増える側）と精算側
+        # 計上側（正常残高が増える側）と精算側（取り崩す側）
         accrual = rec["credit"] if is_credit_normal else rec["debit"]
-        settle  = rec["debit"] if is_credit_normal else rec["credit"]
-
-        accrual_total = sum(accrual.values())
-        settle_total  = sum(settle.values())
-        net = accrual_total - settle_total
-
-        monthly_vals = [v for v in accrual.values() if v > 0]
-        rec_out = {
+        settle = rec["debit"] if is_credit_normal else rec["credit"]
+        results.append({
             "account": acc,
             "sub": sub,
             "label": f"{acc}（{sub}）" if sub != NO_SUB else acc,
-            "net": net,
-            "monthly": float(pd.Series(monthly_vals).median()) if monthly_vals else 0.0,
-            "monthly_span": float(max(monthly_vals) - min(monthly_vals)) if monthly_vals else 0.0,
-            "accrual_months": len(monthly_vals),
-            "settle_months": len([v for v in settle.values() if v > 0]),
-            "is_credit_normal": is_credit_normal,
-        }
-        rec_out["remainder"] = _unsettled_remainder(rec_out)
-        results.append(rec_out)
+            "accrual": accrual,
+            "settle": settle,
+        })
     return results
-
-
-def _unsettled_remainder(b: dict):
-    """
-    「月次計上額の整数倍では説明できない端数」を返す（該当しなければ None）。
-
-    経過勘定は毎月同額が計上され、翌月に精算されるため、当期ネットは
-    正常なら月次計上額の整数倍（＝未払で残っている月数分）になる。
-    その剰余が、計上額と支払額の差額を表す。
-    """
-    if b["accrual_months"] < MIN_ACCRUAL_MONTHS or b["settle_months"] < MIN_SETTLE_MONTHS:
-        return None  # 定期的な精算サイクルが確認できない
-    m = b["monthly"]
-    if m < MIN_MONTHLY_AMOUNT:
-        return None
-    # 「整数倍で説明できる」という前提は毎月ほぼ定額で計上される場合にのみ成立する。
-    # 月ごとに金額が大きく変動する科目では剰余に意味がないため対象外とする。
-    if b["monthly_span"] > m * ACCRUAL_STABLE_R:
-        return None
-
-    remainder = abs(b["net"]) % m
-    # 月次額をわずかに下回る端数（例: 49,999円 ≒ 1ヶ月分）は正常側に寄せる
-    if remainder > m * (1 - DIFF_RATIO_MAX):
-        remainder = m - remainder
-    if remainder < MIN_DIFF_AMOUNT or remainder >= m * DIFF_RATIO_MAX:
-        return None
-    return remainder
 
 
 # ──────────────────────────────────────────────────────────
 # 7-1: 経過勘定の未清算差額
 # ──────────────────────────────────────────────────────────
-def _check_7_1_unsettled_difference(balances: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    issues: List[Dict[str, Any]] = []
+def _find_unsettled_differences(records: List[Dict[str, Any]],
+                                periods: list) -> List[Dict[str, Any]]:
+    """
+    各月末の D =（前月までの計上累計）−（当月までの精算累計）を求め、
+    D が途中から変化して最後まで戻らないものを「未清算差額」として抽出する。
+    """
+    diffs = []
+    n = len(periods)
 
-    for b in balances:
-        remainder = b.get("remainder")
-        if remainder is None:
+    for rec in records:
+        accrual, settle = rec["accrual"], rec["settle"]
+        if len([v for v in accrual.values() if v > 0]) < MIN_ACCRUAL_MONTHS:
             continue
-        m = b["monthly"]
-        net = b["net"]
+        if len([v for v in settle.values() if v > 0]) < MIN_SETTLE_MONTHS:
+            continue
 
-        overpaid = net < 0
-        if overpaid:
+        # D[k] = 前月までの計上累計 − 当月までの精算累計
+        d_series = []
+        cum_accrual = 0.0
+        cum_settle = 0.0
+        prev_cum_accrual = 0.0
+        for p in periods:
+            prev_cum_accrual = cum_accrual
+            cum_accrual += accrual.get(p, 0.0)
+            cum_settle += settle.get(p, 0.0)
+            d_series.append(prev_cum_accrual - cum_settle)
+
+        # 正常時に D が取る値（＝期首残高相当）を最頻値で推定する
+        rounded = [round(d) for d in d_series]
+        baseline = max(set(rounded), key=rounded.count)
+
+        diff = d_series[-1] - baseline
+        if abs(diff) < MIN_DIFF_AMOUNT:
+            continue
+        # 最終月だけのズレは「当月分の支払がまだ」という正常な状態なので除外する。
+        # 前月時点でも同じズレが続いている＝解消されていない差額のみを対象とする。
+        if n < 2 or abs((d_series[-2] - baseline) - diff) >= MIN_DIFF_AMOUNT:
+            continue
+
+        # ズレが生じた月を特定する
+        changed_at = None
+        for i, d in enumerate(d_series):
+            if abs((d - baseline) - diff) < MIN_DIFF_AMOUNT:
+                changed_at = periods[i]
+                break
+
+        diffs.append({
+            "label": rec["label"],
+            "account": rec["account"],
+            "sub": rec["sub"],
+            "amount": abs(diff),
+            "overpaid": diff < 0,
+            "month": str(changed_at) if changed_at else "全期間",
+        })
+    return diffs
+
+
+def _build_7_1_issues(diffs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    issues = []
+    for d in diffs:
+        if d["overpaid"]:
             detail = (
-                f"当期の精算額が計上額を {abs(net):,.0f}円 上回っています（支払超過）。"
+                f"精算（支払）額が計上額を {d['amount']:,.0f}円 上回っています。"
+                "支払超過、または計上漏れの可能性があります。"
             )
         else:
             detail = (
-                f"月次の計上額（約{m:,.0f}円）では説明できない "
-                f"{remainder:,.0f}円 の端数が残っています。"
+                f"計上額のうち {d['amount']:,.0f}円 が精算されずに残っています。"
+                "支払漏れ、または計上先の科目誤りの可能性があります。"
             )
-
         issues.append({
             "level": "warning", "category": "7-1 経過勘定の未清算差額",
-            "check_id": "7-1", "account": b["label"], "month": "全期間",
-            "detail": {"net": float(net), "remainder": float(remainder), "monthly": float(m)},
+            "check_id": "7-1", "account": d["label"], "month": d["month"],
+            "detail": {"amount": float(d["amount"]), "overpaid": d["overpaid"]},
             "message": (
-                f"【7-1・中】{b['label']} は毎月計上と精算が行われていますが、{detail}"
-                "計上額と支払額に差額が生じている可能性があります。"
-                "（支払額の誤り、または計上先の科目誤りが考えられます）"
+                f"【7-1・中】{d['label']} は毎月の計上と精算が行われていますが、"
+                f"{d['month']} 以降、計上額と精算額に差額が生じたまま解消されていません。"
+                f"{detail}"
             ),
         })
     return issues
 
 
 # ──────────────────────────────────────────────────────────
-# 7-2: 同額の未清算差額の対応（科目の取り違え）
+# 7-2: 同額の仕訳との突き合わせ（科目の取り違え）
 # ──────────────────────────────────────────────────────────
-def _check_7_2_amount_match(df: pd.DataFrame,
-                            balances: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _check_7_2_misposting(df: pd.DataFrame,
+                          diffs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    ある経過勘定の未清算差額と、別の科目に残っている同額の残高を突き合わせる。
+    7-1 で検出した差額と同額の仕訳が、別の経過勘定に計上されていないかを探す。
 
     例) 未払費用（経費精算・清水）に 8,031円 の差額があり、
-        未払金（アメックスカード）にも同額 8,031円 の端数が残っている
+        同額 8,031円 の仕訳が未払金（アメックスカード）に計上されている
         → 本来どちらか一方に計上すべきものが取り違えられている可能性。
 
-    照合には「未清算の端数」を使う。残高そのものには当月分の正常な未払が
-    含まれるため（例: 未払金 128,031円 = 当月分120,000円 + 端数8,031円）、
-    生の残高同士では一致しない。
+    実務担当者が「金額の一致」を手掛かりに科目誤りを見つける手順を再現している。
     """
-    issues: List[Dict[str, Any]] = []
+    issues = []
+    if not diffs:
+        return issues
 
-    # 未清算の端数（円単位に丸めた値）→ 該当する科目のリスト
-    by_amount: dict = {}
-    for b in balances:
-        remainder = b.get("remainder")
-        if remainder is None:
-            continue
-        amt = round(remainder)
-        if amt < MIN_DIFF_AMOUNT:
-            continue
-        by_amount.setdefault(amt, []).append(b)
+    d_acc = df["debit_account"].fillna("").astype(str)
+    c_acc = df["credit_account"].fillna("").astype(str)
+    d_amt = df["debit_amount"].round()
+    c_amt = df["credit_amount"].round()
 
-    for amt, group in sorted(by_amount.items()):
-        # 「異なる勘定科目」同士の一致のみを対象にする
-        distinct_accounts = {b["account"] for b in group}
-        if len(distinct_accounts) < 2:
+    for d in diffs:
+        amount = round(d["amount"])
+        src_account = d["account"]
+
+        # 同額で、差額が生じた科目とは別の経過勘定に計上されている仕訳を探す
+        def _other_clearing(name: str) -> bool:
+            base = _base_account(name)
+            return bool(base) and base != _base_account(src_account)
+
+        mask = (
+            ((d_amt == amount) & c_acc.map(_other_clearing)) |
+            ((c_amt == amount) & d_acc.map(_other_clearing)) |
+            ((d_amt == amount) & d_acc.map(_other_clearing)) |
+            ((c_amt == amount) & c_acc.map(_other_clearing))
+        )
+        hits = df[mask]
+        if hits.empty:
             continue
 
-        labels = [b["label"] for b in group]
-        hint = _find_matching_entries(df, amt, distinct_accounts)
+        lines = []
+        counter_accounts = set()
+        for _, row in hits.head(5).iterrows():
+            for name in (str(row["debit_account"]), str(row["credit_account"])):
+                if _other_clearing(name):
+                    counter_accounts.add(name.strip())
+            parts = [date_safe(row)]
+            if slip_safe(row):
+                parts.append(f"伝票No.{slip_safe(row)}")
+            parts.append(f"{str(row['debit_account']).strip()} / {str(row['credit_account']).strip()}")
+            if desc_safe(row):
+                parts.append(f"摘要「{desc_safe(row)}」")
+            lines.append("　".join(parts))
+
+        detail_lines = "\n".join(f"・{l}" for l in lines)
+        suffix = f"\n・ほか{len(hits) - 5}件" if len(hits) > 5 else ""
         issues.append({
             "level": "warning", "category": "7-2 科目取り違えの可能性",
-            "check_id": "7-2", "account": labels[0], "month": "全期間",
-            "detail": {"amount": float(amt), "accounts": labels},
+            "check_id": "7-2", "account": d["label"], "month": d["month"],
+            "detail": {"amount": float(amount), "counter_accounts": sorted(counter_accounts)},
             "message": (
-                f"【7-2・中】同額 {amt:,.0f}円 の未清算残高が複数の科目に残っています: "
-                f"{'、'.join(labels[:4])}。"
+                f"【7-2・中】{d['label']} の未清算差額 {amount:,.0f}円 と同額の仕訳が、"
+                f"別の科目（{'、'.join(sorted(counter_accounts)[:3])}）に計上されています。"
                 "本来どちらか一方に計上すべきものが、別の科目に計上されている"
-                "（科目の取り違え）可能性があります。" + hint
+                f"（科目の取り違え）可能性があります。\n【同額の仕訳】\n{detail_lines}{suffix}"
             ),
         })
     return issues
-
-
-def _find_matching_entries(df: pd.DataFrame, amount: float, accounts: set) -> str:
-    """一致した金額と同額の仕訳を探し、日付・伝票番号・摘要を手掛かりとして返す"""
-    acc_mask = (
-        df["debit_account"].fillna("").astype(str).apply(lambda x: any(a in x for a in accounts)) |
-        df["credit_account"].fillna("").astype(str).apply(lambda x: any(a in x for a in accounts))
-    )
-    amt_mask = (
-        (df["debit_amount"].round() == round(amount)) |
-        (df["credit_amount"].round() == round(amount))
-    )
-    hits = df[acc_mask & amt_mask]
-    if hits.empty:
-        return ""
-
-    lines = []
-    for _, row in hits.head(3).iterrows():
-        parts = [date_safe(row)]
-        if slip_safe(row):
-            parts.append(f"伝票No.{slip_safe(row)}")
-        if desc_safe(row):
-            parts.append(f"摘要「{desc_safe(row)}」")
-        lines.append("　".join(parts))
-    return "\n【同額の仕訳】\n" + "\n".join(f"・{l}" for l in lines)

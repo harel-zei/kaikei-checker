@@ -277,14 +277,19 @@ def _check_6_3_by_description(work: pd.DataFrame, all_periods: list,
     if rows.empty:
         return issues
 
-    rows["_dkey"] = rows["description"].fillna("").astype(str).map(_desc_key)
-    rows = rows[rows["_dkey"].str.len() >= DESC_MIN_LEN]
+    # 金額ベースの判定（6-3B）は摘要の有無に関係なく行うため、絞り込み前を保持する
+    rows_all = rows
+    rows = rows[rows["description"].fillna("").astype(str).map(_desc_key).str.len() >= DESC_MIN_LEN].copy()
     if rows.empty:
-        return issues
+        return _check_6_3b_by_amount(rows_all, all_periods, flagged, set())
+    rows["_dkey"] = rows["description"].fillna("").astype(str).map(_desc_key)
 
+    seen_amounts = set()  # 金額ベース(6-3B)との重複を避けるため、指摘済みの金額を記録
     grouped = rows.groupby(["_acc", "_dkey", "_fp"])["debit_amount"].sum()
     for (account, dkey), monthly in grouped.groupby(level=[0, 1]):
-        # 6-1 で科目ごと指摘済みなら重複させない
+        # 1-1 が扱う定例科目、および 6-1 で指摘済みの科目は重複させない
+        if any(kw in account for kw in RECURRING_ACCOUNTS):
+            continue
         if flagged is not None and account in flagged["accounts"]:
             continue
 
@@ -311,6 +316,7 @@ def _check_6_3_by_description(work: pd.DataFrame, all_periods: list,
         sample = rows[(rows["_acc"] == account) & (rows["_dkey"] == dkey)]["description"].iloc[0]
         s = ", ".join(str(m) for m in missing[:4])
         suffix = f"（他{len(missing)-4}ヶ月）" if len(missing) > 4 else ""
+        seen_amounts.add((account, round(typical)))
         issues.append({
             "level": "warning", "category": "6-3 定期費用の欠落（摘要）",
             "check_id": "6-3", "account": account, "month": s,
@@ -318,6 +324,77 @@ def _check_6_3_by_description(work: pd.DataFrame, all_periods: list,
                 f"【6-3・中】{account}の「{str(sample)[:30]}」は全{total}ヶ月中{n_present}ヶ月で"
                 f"計上（毎月ほぼ定額 約{typical:,.0f}円）されていますが、"
                 f"次の月には同じ内容の計上がありません: {s}{suffix}。"
+                f"{account}には他の計上があるため科目全体では気づきにくい計上漏れです。"
+                "（契約終了・解約による場合は問題ありません）"
+            ),
+        })
+
+    issues.extend(_check_6_3b_by_amount(rows_all, all_periods, flagged, seen_amounts))
+    return issues
+
+
+# ── 6-3B: 金額による定期取引の識別 ──────────────────────────
+# 摘要が空欄だったり、毎月の表記が揺れる（取引先名の有無・全角半角など）場合、
+# 摘要キーでは同一の定期取引として識別できない。
+# 定額のサブスクリプション等は「同じ科目・同じ金額」が毎月現れるという特徴が
+# あるため、金額をキーにしても定期取引を識別できる。
+AMOUNT_MAX_PER_MONTH = 1.5   # 1ヶ月あたりの平均出現回数の上限（多発する金額は定期取引でない）
+
+
+def _check_6_3b_by_amount(rows: pd.DataFrame, all_periods: list,
+                          flagged: dict = None,
+                          seen_amounts: set = None) -> List[Dict[str, Any]]:
+    issues: List[Dict[str, Any]] = []
+    if rows.empty:
+        return issues
+    total = len(all_periods)
+    seen_amounts = seen_amounts or set()
+
+    work = rows.copy()
+    work["_amt"] = work["debit_amount"].round()
+    work = work[work["_amt"] >= MIN_TYPICAL]
+    if work.empty:
+        return issues
+
+    grouped = work.groupby(["_acc", "_amt"])
+    for (account, amount), grp in grouped:
+        # 1-1 が扱う定例科目、および 6-1 で指摘済みの科目は重複させない
+        if any(kw in account for kw in RECURRING_ACCOUNTS):
+            continue
+        if flagged is not None and account in flagged["accounts"]:
+            continue
+        if (account, round(amount)) in seen_amounts:
+            continue  # 摘要ベース(6-3)で既に指摘済み
+
+        present = set(grp["_fp"].dropna().unique())
+        n_present = len(present)
+        if n_present < MIN_PRESENT or n_present >= total:
+            continue
+        if n_present / total < RECUR_RATIO:
+            continue
+        # 定期取引は「月1回」が基本。同じ金額が月内に何度も出るものは対象外
+        if len(grp) > n_present * AMOUNT_MAX_PER_MONTH:
+            continue
+
+        missing = [p for p in all_periods if p not in present]
+        if not missing:
+            continue
+
+        desc = ""
+        for d in grp["description"].fillna("").astype(str):
+            if d.strip() and d.strip().lower() not in ("nan", "none"):
+                desc = f"（摘要: {d.strip()[:25]}）"
+                break
+
+        s = ", ".join(str(m) for m in missing[:4])
+        suffix = f"（他{len(missing)-4}ヶ月）" if len(missing) > 4 else ""
+        issues.append({
+            "level": "warning", "category": "6-3 定期費用の欠落（摘要）",
+            "check_id": "6-3", "account": account, "month": s,
+            "message": (
+                f"【6-3・中】{account} に毎月同額 {amount:,.0f}円 の計上"
+                f"{desc}が全{total}ヶ月中{n_present}ヶ月ありますが、"
+                f"次の月には同額の計上がありません: {s}{suffix}。"
                 f"{account}には他の計上があるため科目全体では気づきにくい計上漏れです。"
                 "（契約終了・解約による場合は問題ありません）"
             ),
