@@ -51,6 +51,7 @@ def _run_all_checks(df):
     from checkers.ar_ap_checker import check_ar_ap
     from checkers.governance_checker import check_governance
     from checkers.trend_checker import check_trend
+    from checkers.reconciliation_checker import check_reconciliation
 
     issues = []
     issues += check_bs(df, {})
@@ -62,6 +63,7 @@ def _run_all_checks(df):
     issues += check_ar_ap(df)
     issues += check_governance(df)
     issues += check_trend(df, 1)
+    issues += check_reconciliation(df)
     return issues
 
 
