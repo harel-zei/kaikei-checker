@@ -42,6 +42,7 @@ MIN_CYCLE_MONTHS   = 4      # 精算サイクルの判定に必要な最小月�
 MIN_ACCRUAL_MONTHS = 3      # 計上が何ヶ月以上あれば「定期的な計上」とみなすか
 MIN_SETTLE_MONTHS  = 2      # 精算（反対仕訳）が何ヶ月以上あるか
 MIN_DIFF_AMOUNT    = 100    # この額未満の差額は指摘しない（消費税端数等のノイズ抑制）
+STEP_RATIO         = 0.8    # ズレのうち単月の変化で説明できるべき割合（段差か漸増かの判別）
 
 # 補助科目が付いていない行をまとめる系列ラベル
 NO_SUB = "（補助科目なし）"
@@ -161,6 +162,25 @@ def _d_series(accrual: dict, settle: dict, periods: list, lag: int) -> list:
     return series
 
 
+def _explained_by_pending_accrual(diff: float, accrual: dict) -> bool:
+    """ズレの額が「未払のまま残っている月次計上額（の合計）」で説明できるか。
+
+    例) 月次計上が約50,000円で、ズレが50,000円や100,000円なら
+        1〜2ヶ月分が未払なだけであり、差額ではない。
+    """
+    values = sorted((v for v in accrual.values() if v > 0), reverse=True)
+    if not values:
+        return False
+    tol = max(MIN_DIFF_AMOUNT, abs(diff) * 0.02)
+    # 直近の計上額を大きい順に積み上げ、ズレと一致するものがあれば「未払」で説明できる
+    running = 0.0
+    for v in values[:6]:
+        running += v
+        if abs(running - abs(diff)) <= tol:
+            return True
+    return False
+
+
 def _find_unsettled_differences(records: List[Dict[str, Any]],
                                 periods: list) -> List[Dict[str, Any]]:
     """
@@ -192,11 +212,6 @@ def _find_unsettled_differences(records: List[Dict[str, Any]],
             continue
         variety, lag, series = best
 
-        # 安定した消込サイクルと言えない場合は判定しない（誤検知防止）
-        # 正常値 + 差額（最大2種類の変化）までを許容する
-        if variety > 3:
-            continue
-
         # 正常時の D（＝期首残高相当）。消込サイクルが立ち上がる lag 月目を基準にする
         baseline = series[min(lag, n - 1)]
 
@@ -204,12 +219,29 @@ def _find_unsettled_differences(records: List[Dict[str, Any]],
         if abs(diff) < MIN_DIFF_AMOUNT:
             continue
 
-        # 最終月だけのズレの扱い:
-        #   未精算方向（D が増加）→「当月分の支払がまだ」という正常な状態なので除外
-        #   過大精算方向（D が減少）→ 支払超過であり最終月でも異常
-        sustained = n >= 2 and abs((series[-2] - baseline) - diff) < MIN_DIFF_AMOUNT
-        if not sustained and diff > 0:
+        # 記帳の誤りは「ある月に一度だけ生じる段差」として現れる。
+        # 一方、期首残高を数ヶ月かけて返済している場合などは毎月少しずつ動く。
+        # ズレの大部分が単月の変化で説明できる場合のみ差額とみなす。
+        steps = [series[i] - series[i - 1] for i in range(1, len(series))]
+        if not steps:
             continue
+        largest = max(steps, key=abs)
+        if abs(largest) < abs(diff) * STEP_RATIO:
+            continue
+
+        # ズレが解消されずに続いているか（最終月と前月で同じズレが残っている）
+        sustained = n >= 2 and abs(series[-2] - series[-1]) < MIN_DIFF_AMOUNT
+
+        if diff > 0:
+            # 未精算方向のズレ（残高が増える側）は「まだ支払っていないだけ」の
+            # 可能性があるため、慎重に扱う。
+            if not sustained:
+                continue
+            # ズレの額が直近の月次計上額とほぼ一致する場合は、
+            # 単に当月分（数ヶ月分）が未払なだけなので指摘しない。
+            if _explained_by_pending_accrual(diff, accrual):
+                continue
+        # diff < 0（精算しすぎ）は最終月に生じたものでも異常として扱う
 
         # ズレが生じた月を特定する
         changed_at = None

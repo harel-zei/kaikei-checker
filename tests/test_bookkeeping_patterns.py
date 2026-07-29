@@ -133,6 +133,46 @@ def test_7_1_many_clean_subaccounts_not_flagged():
     assert not _recon_ids(rows)
 
 
+def test_7_1_detects_in_noisy_account():
+    """同じ科目に補助科目が複数ぶら下がり、金額も月ごとに揺れる
+    （実データに近い）状況でも差額を検知する。
+
+    テストデータが整いすぎていると、実データで通用しない判定を
+    「動いている」と誤認してしまうため、意図的に雑音を入れて確認する。
+    """
+    import random
+    rng = random.Random(1)
+    rows = _settlement_cycle()  # 清水さんの経費精算（5月に DIFF 円の過払い）
+    # 同じ未払費用に別の補助科目がぶら下がる（実務では普通）
+    for sub, base in (("社会保険料", 380000), ("役員退職金", 30000000), ("水道光熱費", 62000)):
+        for m in range(1, 7):
+            rows.append(je(f"2026-{m:02d}-28", "法定福利費", "未払費用",
+                           base + rng.randint(-3000, 3000), csub=sub))
+        if sub == "役員退職金":
+            continue  # 未払のまま残る（正常）
+        for m in range(2, 7):
+            rows.append(je(f"2026-{m:02d}-10", "未払費用", "普通預金",
+                           base + rng.randint(-3000, 3000), dsub=sub))
+    hits = [h for h in _recon_ids(rows) if "清水" in h["account"]]
+    assert hits, "雑音のある実データ相当の状況で差額が検知されていない"
+    assert abs(hits[0]["detail"]["amount"] - DIFF) < 1
+
+
+def test_7_1_gradual_opening_paydown_not_flagged():
+    """期首残高を数ヶ月かけて返済しているだけの場合は指摘しない。
+
+    記帳の誤りは「ある月に一度だけ生じる段差」として現れるのに対し、
+    返済は毎月少しずつ動くという違いで判別する。
+    """
+    rows = []
+    for m in range(1, 7):
+        rows.append(je(f"2026-{m:02d}-28", "外注費", "未払金", 100000, csub="V社"))
+    # 期首残高 900,000円 を毎月 150,000円ずつ返済（正常）
+    for m in range(1, 7):
+        rows.append(je(f"2026-{m:02d}-10", "未払金", "普通預金", 250000, dsub="V社"))
+    assert not _recon_ids(rows)
+
+
 def test_7_1_small_rounding_difference_not_flagged():
     """消費税端数レベルの差額（しきい値未満）は指摘しない"""
     rows = _settlement_cycle(diff_month=None)
