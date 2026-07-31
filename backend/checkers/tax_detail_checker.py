@@ -120,6 +120,77 @@ def check_tax_detail(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues.extend(_check_2_9_wire_fee_return(df))
     issues.extend(_check_2_10_residential_rent(df))
     issues.extend(_check_2_11_cashback(df))
+    issues.extend(_check_2_12_tax_amount_consistency(df))
+    return issues
+
+
+# ──────────────────────────────────────────────────────────
+# 2-12: 消費税額の整合（税区分と税額の乖離）
+# ──────────────────────────────────────────────────────────
+TAX_AMT_TOL_RATE = 0.02   # 期待税額からの許容乖離率（端数処理の方式差を吸収）
+TAX_AMT_TOL_MIN  = 10     # 許容乖離の最低額（円）
+TAX_AMT_MIN_BASE = 1_000  # この金額未満の仕訳は対象外（端数の影響が相対的に大きいため）
+
+
+def _check_2_12_tax_amount_consistency(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    税区分（10%/8%）に対して消費税額が計算上ありえない値になっている仕訳を検出する。
+    手入力での税額修正ミス・税区分の付け間違いを捕捉する。
+
+    税込経理（内税: 金額×10/110）と税抜経理（外税: 金額×10%）の両方を想定し、
+    どちらの計算とも一致しない場合のみ指摘する。
+    """
+    issues: List[Dict[str, Any]] = []
+
+    for side, side_label in (("debit", "借方"), ("credit", "貸方")):
+        tax_col, amt_col = f"{side}_tax", f"{side}_amount"
+        tax_amt_col, acc_col = f"{side}_tax_amt", f"{side}_account"
+        if tax_amt_col not in df.columns or tax_col not in df.columns:
+            continue
+
+        t = df[tax_col].astype(str)
+        amount = pd.to_numeric(df[amt_col], errors="coerce").fillna(0.0)
+        tax_amt = pd.to_numeric(df[tax_amt_col], errors="coerce").fillna(0.0)
+
+        is_10 = t.str.contains("課税|10%", na=False) & ~t.str.contains("8%|軽減", na=False)
+        is_8 = t.str.contains("8%|軽減", na=False)
+        base = (tax_amt > 0) & (amount >= TAX_AMT_MIN_BASE)
+
+        def _bad(rate_inc: float, rate_exc: float, mask):
+            """内税・外税どちらの期待値とも乖離している行"""
+            exp1, exp2 = amount * rate_inc, amount * rate_exc
+            tol1 = (exp1 * TAX_AMT_TOL_RATE).clip(lower=TAX_AMT_TOL_MIN)
+            tol2 = (exp2 * TAX_AMT_TOL_RATE).clip(lower=TAX_AMT_TOL_MIN)
+            return mask & ((tax_amt - exp1).abs() > tol1) & ((tax_amt - exp2).abs() > tol2)
+
+        bad = df[_bad(10 / 110, 0.10, base & is_10) | _bad(8 / 108, 0.08, base & is_8)]
+        if bad.empty:
+            continue
+
+        # 科目ごとに1件へ集約（大量の個別指摘を避ける）
+        for account, grp in bad.groupby(bad[acc_col].fillna("").astype(str).str.strip()):
+            if not account or account == "nan":
+                continue
+            lines = []
+            for _, row in grp.head(5).iterrows():
+                a = float(row[amt_col])
+                ta = float(row[tax_amt_col])
+                slip = f"伝票No.{slip_safe(row)}　" if slip_safe(row) else ""
+                lines.append(
+                    f"・{date_safe(row)}　{slip}金額 {a:,.0f}円 / 税額 {ta:,.0f}円"
+                    f"（{row[tax_col]}）"
+                )
+            suffix = f"\n・ほか{len(grp) - 5}件" if len(grp) > 5 else ""
+            issues.append({
+                "level": "warning", "category": "2-12 消費税額の整合",
+                "check_id": "2-12", "account": account, "month": "全期間",
+                "message": (
+                    f"【2-12・中】{account}（{side_label}）に、税区分から計算される"
+                    f"消費税額と一致しない仕訳が {len(grp)}件 あります。"
+                    "税額の手入力修正ミス、または税区分の付け間違いの可能性があります。\n"
+                    f"【対象】\n" + "\n".join(lines) + suffix
+                ),
+            })
     return issues
 
 

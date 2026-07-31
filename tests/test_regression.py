@@ -52,6 +52,7 @@ def _run_all_checks(df):
     from checkers.governance_checker import check_governance
     from checkers.trend_checker import check_trend
     from checkers.reconciliation_checker import check_reconciliation
+    from checkers.consistency_checker import check_consistency
 
     issues = []
     issues += check_bs(df, {})
@@ -64,6 +65,7 @@ def _run_all_checks(df):
     issues += check_governance(df)
     issues += check_trend(df, 1)
     issues += check_reconciliation(df)
+    issues += check_consistency(df, {})
     return issues
 
 
@@ -74,8 +76,13 @@ GOLDEN_COUNTS = {
     "1-2 期間帰属": 2,
     "1-3 部門未設定": 1,
     "2-9 振込手数料返還": 1,
+    # 合成データは税区分をランダムに付ける一方、税額を常に10/110で生成する。
+    # 8%(軽)の行は税額が実際に不整合なので、2-12が拾うのは正しい挙動。
+    "2-12 消費税額の整合": 22,
     "5-2 重複仕訳": 33,
     "6-2 定期取引の欠落": 3,
+    # 合成データの預り金は貸方のみで納付仕訳が無いため、7-3の情報提供が出る（正しい挙動）
+    "7-3 預り金の納付漏れ": 8,
     "BS": 1,
     "PL": 2,
     "消費税": 10,

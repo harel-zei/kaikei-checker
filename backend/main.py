@@ -32,6 +32,7 @@ from checkers.ar_ap_checker import check_ar_ap
 from checkers.governance_checker import check_governance
 from checkers.trend_checker import check_trend
 from checkers.reconciliation_checker import check_reconciliation
+from checkers.consistency_checker import check_consistency
 from export_excel import build_checksheet_xlsx
 from client_store import (
     list_clients, save_prior_files, load_prior_files,
@@ -559,6 +560,7 @@ async def _run_checks(
         ("ガバナンス",   lambda: check_governance(df_checked)),
         ("損益推移",     lambda: check_trend(df_checked, fiscal_cutoff_day)),
         ("経過勘定消込", lambda: check_reconciliation(df_checked)),
+        ("BS/PL整合",    lambda: check_consistency(df_checked, ob)),
     ]
     for _name, _fn in _checker_jobs:
         try:

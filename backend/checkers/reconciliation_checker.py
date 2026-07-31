@@ -66,6 +66,8 @@ def check_reconciliation(df: pd.DataFrame) -> List[Dict[str, Any]]:
     diffs = _find_unsettled_differences(records, periods)
     issues.extend(_build_7_1_issues(diffs))
     issues.extend(_check_7_2_misposting(df, diffs))
+    issues.extend(_check_7_3_withholding_cycle(records, periods))
+    issues.extend(_check_7_4_prepaid_amortization(records, periods))
     return issues
 
 
@@ -365,6 +367,120 @@ def _check_7_2_misposting(df: pd.DataFrame,
                 f"別の科目（{'、'.join(sorted(counter_accounts)[:3])}）に計上されています。"
                 "本来どちらか一方に計上すべきものが、別の科目に計上されている"
                 f"（科目の取り違え）可能性があります。\n【同額の仕訳】\n{detail_lines}{suffix}"
+            ),
+        })
+    return issues
+
+
+# ──────────────────────────────────────────────────────────
+# 7-3: 預り金の納付サイクル（源泉所得税・住民税・社会保険）
+# ──────────────────────────────────────────────────────────
+WITHHOLD_GAP_MONTHS = 2   # 納付（取崩し）が何ヶ月連続で無ければ指摘するか
+WITHHOLD_MIN_ACCRUE = 3   # 預りの計上が何ヶ月以上あれば「毎月の預りサイクル」とみなすか
+
+
+def _check_7_3_withholding_cycle(records: List[Dict[str, Any]],
+                                 periods: list) -> List[Dict[str, Any]]:
+    """
+    預り金（源泉所得税・住民税・社会保険料など）は、毎月の給与で預かり、
+    原則翌月に納付して取り崩されるサイクルを持つ。
+
+    - これまで納付されていたのに、預りが続く中で納付だけが止まった → 納付漏れの疑い
+    - 一度も納付が無いまま預りだけが積み上がっている → 確認喚起
+      （源泉所得税・住民税は納期特例（年2回納付）の場合があるため注記付き）
+    """
+    issues: List[Dict[str, Any]] = []
+    pos = {p: i for i, p in enumerate(periods)}
+    n = len(periods)
+
+    for rec in records:
+        if "預り金" not in rec["account"]:
+            continue
+        if rec["sub"] == ACCOUNT_TOTAL:
+            continue  # 補助科目単位で個別に判定するため、合算系列は重複させない
+        accrual_months = sorted(p for p, v in rec["accrual"].items() if v > 0)
+        settle_months = sorted(p for p, v in rec["settle"].items() if v > 0)
+        if len(accrual_months) < WITHHOLD_MIN_ACCRUE:
+            continue
+
+        if settle_months:
+            last_settle = pos[settle_months[-1]]
+            # 納付が止まった後も預りの計上が続いているか
+            accrue_after = [p for p in accrual_months if pos[p] > last_settle]
+            gap = (n - 1) - last_settle
+            if gap >= WITHHOLD_GAP_MONTHS and len(accrue_after) >= WITHHOLD_GAP_MONTHS:
+                pending = sum(rec["accrual"][p] for p in accrue_after)
+                issues.append({
+                    "level": "warning", "category": "7-3 預り金の納付漏れ",
+                    "check_id": "7-3", "account": rec["label"],
+                    "month": str(periods[last_settle]),
+                    "message": (
+                        f"【7-3・高】{rec['label']} は {periods[last_settle]} を最後に"
+                        f"納付（取崩し）が {gap}ヶ月ありません。その間も預りの計上は"
+                        f"続いています（未納付相当 約{pending:,.0f}円）。"
+                        "源泉所得税・住民税・社会保険料の納付漏れの可能性があります。"
+                    ),
+                })
+        else:
+            # 一度も納付が無い（データ期間中）
+            total = sum(rec["accrual"].values())
+            issues.append({
+                "level": "info", "category": "7-3 預り金の納付漏れ",
+                "check_id": "7-3", "account": rec["label"], "month": "全期間",
+                "message": (
+                    f"【7-3・低】{rec['label']} は {len(accrual_months)}ヶ月にわたり"
+                    f"預りの計上（累計 約{total:,.0f}円）がありますが、"
+                    "期間中に納付（取崩し）の仕訳がありません。"
+                    "納付状況を確認してください。"
+                    "（源泉所得税・住民税を納期特例（年2回）で納付している場合は"
+                    "問題ありません）"
+                ),
+            })
+    return issues
+
+
+# ──────────────────────────────────────────────────────────
+# 7-4: 前払費用の按分進行（月次償却の確認）
+# ──────────────────────────────────────────────────────────
+PREPAID_IDLE_MONTHS = 2   # 計上後、取崩しが無いまま何ヶ月経過したら指摘するか
+
+
+def _check_7_4_prepaid_amortization(records: List[Dict[str, Any]],
+                                    periods: list) -> List[Dict[str, Any]]:
+    """
+    前払費用・長期前払費用に計上（年払い保険料・保守料等）があるのに、
+    その後の取崩し（費用への月次按分）が全く行われていないものを検出する。
+    決算時に一括で振り替える方針であれば問題ないため、確認喚起にとどめる。
+    """
+    issues: List[Dict[str, Any]] = []
+    pos = {p: i for i, p in enumerate(periods)}
+    n = len(periods)
+
+    for rec in records:
+        if "前払費用" not in rec["account"]:
+            continue
+        if rec["sub"] == ACCOUNT_TOTAL:
+            continue  # 補助科目単位で個別に判定するため、合算系列は重複させない
+        accrual_months = sorted(p for p, v in rec["accrual"].items() if v > 0)
+        settle_total = sum(rec["settle"].values())
+        if not accrual_months or settle_total > 0:
+            continue  # 取崩しが行われていれば正常
+
+        first = pos[accrual_months[0]]
+        if (n - 1) - first < PREPAID_IDLE_MONTHS:
+            continue  # 計上からまだ日が浅い
+
+        total = sum(rec["accrual"].values())
+        issues.append({
+            "level": "info", "category": "7-4 前払費用の按分",
+            "check_id": "7-4", "account": rec["label"],
+            "month": str(accrual_months[0]),
+            "message": (
+                f"【7-4・低】{rec['label']} に {accrual_months[0]} から"
+                f"計上（累計 約{total:,.0f}円）がありますが、その後"
+                f"{(n - 1) - first}ヶ月間、費用への取崩し（月次按分）がありません。"
+                "月次で損益を正しく見るには按分計上をお勧めします。"
+                "（決算時に一括振替する方針であれば問題ありません）"
             ),
         })
     return issues

@@ -37,6 +37,54 @@ def check_governance(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues.extend(_check_5_3_digit_error(df))
     issues.extend(_check_5_4_entertainment(df))
     issues.extend(_check_5_5_withholding(df))
+    issues.extend(_check_5_6_entertainment_limit(df))
+    return issues
+
+
+# ──────────────────────────────────────────────────────────
+# 5-6: 交際費の年間損金算入限度額（中小法人800万円）への接近
+# ──────────────────────────────────────────────────────────
+ENTERTAINMENT_ANNUAL_LIMIT = 8_000_000  # 中小法人の定額控除限度額
+ENTERTAINMENT_WARN_AT      = 6_000_000  # この額を超えたら接近を通知
+
+
+def _check_5_6_entertainment_limit(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    交際費（接待交際費）の累計が、中小法人の損金算入限度額（年800万円）に
+    接近・超過していないかを確認する。
+
+    ※ データの期間＝事業年度とは限らないため、「アップロード期間の累計」で
+      判定し、事業年度累計は別途確認を促す。
+    """
+    issues = []
+    mask_d = df["debit_account"].fillna("").astype(str).str.contains("交際費", na=False)
+    mask_c = df["credit_account"].fillna("").astype(str).str.contains("交際費", na=False)
+    total = float(df[mask_d]["debit_amount"].sum()) - float(df[mask_c]["credit_amount"].sum())
+    if total < ENTERTAINMENT_WARN_AT:
+        return issues
+
+    if total >= ENTERTAINMENT_ANNUAL_LIMIT:
+        level, tag = "warning", "高"
+        note = (
+            "中小法人の定額控除限度額（年800万円）を超えています。"
+            "超過部分は損金不算入となる可能性があります"
+            "（接待飲食費の50%損金算入との有利選択も検討してください）。"
+        )
+    else:
+        level, tag = "info", "低"
+        note = (
+            "中小法人の定額控除限度額（年800万円）に接近しています。"
+            "残りの期間の支出ペースにご留意ください。"
+        )
+
+    issues.append({
+        "level": level, "category": "5-6 交際費限度額",
+        "check_id": "5-6", "account": "交際費", "month": "全期間",
+        "message": (
+            f"【5-6・{tag}】交際費のアップロード期間累計が {total:,.0f}円 です。{note}"
+            "（事業年度の累計額は年度全体で別途ご確認ください）"
+        ),
+    })
     return issues
 
 
