@@ -19,9 +19,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import supabase_store as _sb
-
-_USE_SB = _sb.is_enabled()
+# Supabaseは任意依存。未設定・未インストールでもローカル保存で動作させる
+# （サーバー内保存が標準のため、requests等が無い環境でも壊れないようにする）
+try:
+    import supabase_store as _sb
+    _USE_SB = _sb.is_enabled()
+except Exception:
+    _sb = None
+    _USE_SB = False
 
 DATA_DIR = Path(__file__).parent / "client_data" / "_feedback"
 _SB_PREFIX = "_feedback"

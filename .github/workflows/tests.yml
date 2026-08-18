@@ -15,7 +15,8 @@ jobs:
         with:
           python-version: "3.11"
       # チェッカーのテストに必要な最小限のみインストール（高速化のため）
+      # requests / python-dotenv は backend の共通モジュールが読み込むため含める
       - name: Install dependencies
-        run: pip install pandas==2.2.3 numpy==2.1.3 pytest==8.3.4
+        run: pip install pandas==2.2.3 numpy==2.1.3 pytest==8.3.4 requests==2.32.3 python-dotenv==1.0.1
       - name: Run tests
         run: pytest
