@@ -34,8 +34,9 @@ except Exception:
 
 import feedback_store
 
-# モデルは既定でOpus 4.8。コスト優先ならAI_MODEL=claude-haiku-4-5等で切替可
-AI_MODEL = os.environ.get("AI_MODEL", "claude-opus-4-8")
+# モデルは既定で Opus 5（Opus 4.8 と同価格でより高性能）。
+# コスト優先なら AI_MODEL=claude-haiku-4-5 等で切替可。
+AI_MODEL = os.environ.get("AI_MODEL", "claude-opus-5")
 _MAX_CANDIDATES = 120   # 1リクエストで送る重複候補の上限
 _MAX_ACCOUNTS = 80      # 見逃し探索で送る科目数の上限
 
@@ -173,7 +174,7 @@ def _judge_duplicates(details: list, client_name: str = None) -> dict:
 
     resp = client.messages.create(
         model=AI_MODEL,
-        max_tokens=8000,
+        max_tokens=16000,
         system=[
             {
                 "type": "text",
@@ -303,7 +304,7 @@ def _ask_missed(matrix: list, missed: list, max_findings: int) -> list:
     )
     resp = client.messages.create(
         model=AI_MODEL,
-        max_tokens=4000,
+        max_tokens=8000,
         system=[{
             "type": "text",
             "text": _MISSED_RUBRIC,
@@ -457,7 +458,7 @@ def _ask_intent_review(catalog: str, issues_payload: list, matrix: list,
 
     resp = client.messages.create(
         model=AI_MODEL,
-        max_tokens=8000,
+        max_tokens=16000,
         system=[
             # 意図カタログは毎回同じなのでキャッシュする
             {"type": "text", "text": catalog, "cache_control": {"type": "ephemeral"}},
