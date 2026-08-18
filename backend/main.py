@@ -14,6 +14,7 @@ from typing import List, Optional
 
 import freee_client
 import freee_token_store
+import feedback_store
 
 from parsers.csv_parser import (
     parse_csv, parse_opening_balances, parse_ending_balances,
@@ -316,7 +317,8 @@ async def _run_pipeline(file_data, client_name, check_until, ob_direct=None, ext
     # クライアント設定（除外科目）を読み込む
     client_settings = get_client_settings(client_name) if client_name else {}
 
-    return await _run_checks(classified, check_until=check_until, client_settings=client_settings)
+    return await _run_checks(classified, check_until=check_until,
+                             client_settings=client_settings, client_name=client_name)
 
 
 # ═══════════════════════════════════════════════════
@@ -453,6 +455,7 @@ async def _run_checks(
     c: dict,
     check_until: Optional[str] = None,
     client_settings: dict = None,
+    client_name: Optional[str] = None,
 ) -> JSONResponse:
     # 当期仕訳帳
     try:
@@ -573,16 +576,33 @@ async def _run_checks(
     if prior_df is not None:
         issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month, ob or None))
 
-    # ── AI選別層（PoC）── 重複仕訳などの感覚的判断をClaudeで選別
-    # ANTHROPIC_API_KEY 未設定時はそのまま通す（フェイルオープン）
+    # ── 学習層 ──────────────────────────────────────────
+    # 担当者の判断履歴を反映する。①はAPIキー不要、②③はClaudeを使う。
     try:
         import ai_reviewer
+
+        # ① 学習済み抑制: 繰り返し「不要」とされたパターンを除く（error は対象外）
+        issues, suppressed = ai_reviewer.apply_learned_suppression(issues, client_name)
+        if suppressed:
+            c.setdefault("log", []).append(
+                f"📚 学習済み抑制: 過去に「不要」と判断された指摘 {suppressed}件 を除外"
+            )
+
         if ai_reviewer.is_enabled():
+            # ② AI選別: 重複仕訳などの感覚的判断（過去の判断履歴を参照）
             before = len(issues)
-            issues = ai_reviewer.review_issues(issues)
+            issues = ai_reviewer.review_issues(issues, client_name)
             c.setdefault("log", []).append(
                 f"🤖 AI選別: 重複仕訳などを精査（{before}件→{len(issues)}件）"
             )
+
+            # ③ 見逃し探索: 担当者が登録した観点でAIが追加の候補を探す
+            extra = ai_reviewer.find_missed_issues(df_checked, client_name)
+            if extra:
+                issues.extend(extra)
+                c.setdefault("log", []).append(
+                    f"🔎 AI学習チェック: 過去の見逃し観点から {len(extra)}件 の候補を抽出"
+                )
     except Exception as e:
         print(f"[ai_reviewer] 呼び出し失敗: {e}", flush=True)
 
@@ -621,6 +641,53 @@ async def _run_checks(
             "classification_log": c.get("log", []),
         },
         "issues": issues,
+    })
+
+
+# ═══════════════════════════════════════════════════
+# フィードバック（使うほど精度が上がる仕組み）
+# ═══════════════════════════════════════════════════
+@app.post("/api/feedback/verdict")
+async def api_feedback_verdict(request: Request, _: None = Depends(require_auth)):
+    """指摘に対する担当者の判断（妥当 / 不要）を記録する。"""
+    body = await request.json()
+    try:
+        feedback_store.record_verdict(
+            body.get("client_name"), body.get("issue") or {},
+            str(body.get("verdict") or ""), body.get("note", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"フィードバックの保存に失敗しました: {e}")
+    return JSONResponse({"status": "ok",
+                         "stats": feedback_store.stats(body.get("client_name"))})
+
+
+@app.post("/api/feedback/missed")
+async def api_feedback_missed(request: Request, _: None = Depends(require_auth)):
+    """システムが拾えなかった指摘（担当者が手で見つけたもの）を登録する。"""
+    body = await request.json()
+    try:
+        feedback_store.record_missed(
+            body.get("client_name"), body.get("account", ""),
+            body.get("description", ""), body.get("month", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"登録に失敗しました: {e}")
+    return JSONResponse({"status": "ok",
+                         "stats": feedback_store.stats(body.get("client_name"))})
+
+
+@app.get("/api/feedback/stats")
+async def api_feedback_stats(client_name: Optional[str] = None,
+                             _: None = Depends(require_auth)):
+    """学習状況（何件の判断が蓄積され、何パターンを抑制しているか）を返す。"""
+    return JSONResponse({
+        "client": feedback_store.stats(client_name),
+        "all":    feedback_store.stats(feedback_store.GLOBAL_KEY),
     })
 
 
