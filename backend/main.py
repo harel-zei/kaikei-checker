@@ -603,6 +603,19 @@ async def _run_checks(
                 c.setdefault("log", []).append(
                     f"🔎 AI学習チェック: 過去の見逃し観点から {len(extra)}件 の候補を抽出"
                 )
+
+            # ④ 意図精査: 各チェックが「何を守りたいか」に照らして再評価し、
+            #    条件からは外れるが確認すべき事象も拾う（ルールでは原理的にできない部分）
+            issues, intent_extra = ai_reviewer.review_by_intent(
+                issues, df_checked, client_name)
+            if intent_extra:
+                issues.extend(intent_extra)
+            demoted = sum(1 for i in issues if "要確認度: 低" in str(i.get("category", "")))
+            if intent_extra or demoted:
+                c.setdefault("log", []).append(
+                    f"🧭 AI意図精査: 意図に照らして {demoted}件 を参考扱いに降格、"
+                    f"{len(intent_extra)}件 の観点を追加"
+                )
     except Exception as e:
         print(f"[ai_reviewer] 呼び出し失敗: {e}", flush=True)
 

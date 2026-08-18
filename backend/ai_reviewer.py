@@ -339,3 +339,141 @@ def _extract_json(text: str) -> str:
     # 最初の { から最後の } まで
     s, e = t.find("{"), t.rfind("}")
     return t[s:e + 1] if s != -1 and e != -1 else "{}"
+
+
+# ══════════════════════════════════════════════════════════
+# ④ 意図に照らした精査（ルールの条件ではなく、守りたいことで見る）
+# ══════════════════════════════════════════════════════════
+# ルールは「条件」でしかないため、条件に合致しても実態として問題ないもの
+# （誤検知）と、条件から外れるが意図に照らせば問題のもの（見逃し）が生じる。
+# check_intents.py に明文化した「各チェックが何を守りたいか」をClaudeに渡し、
+# 意図の側から再評価させる。ルールベースでは原理的にできない部分を担う。
+
+_INTENT_MAX_ISSUES = 60    # 再評価に送る指摘数の上限
+_INTENT_MAX_EXTRA = 8      # 追加で挙げさせる論点の上限
+
+_INTENT_TASK = """上記の意図を踏まえ、次の2つを行ってください。
+
+【A】ルールが出した指摘の再評価
+各指摘について、意図に照らして「確認する価値があるか」を判定します。
+- keep=true  … 意図に照らしても確認すべき
+- keep=false … 条件には合致したが、データを見る限り実態として問題ない
+keep=false とする場合は、なぜそう言えるかを数字を挙げて示してください。
+根拠が示せないものは keep=true にしてください（迷ったら残す）。
+
+【B】意図に照らした追加の観点
+ルールの条件からは外れるが、意図に照らすと確認すべき事象を挙げてください。
+月次推移から読み取れる事実のみを根拠とし、推測で挙げないでください。
+該当が無ければ空の配列を返してください。
+
+出力は必ず次の形式のJSONのみとし、前後に説明文やコードフェンスを付けないでください:
+{"review":[{"index":0,"keep":true,"reason":"..."}],
+ "additional":[{"account":"科目名","month":"YYYY-MM","message":"確認内容（100字程度）","basis":"根拠となる数字"}]}"""
+
+
+def review_by_intent(issues: list, df, client_name: str = None) -> tuple:
+    """意図に照らして指摘を再評価し、追加の観点も抽出する。
+
+    Returns: (再評価後の指摘リスト, 意図から追加された指摘リスト)
+    フェイルオープン: 失敗時は入力をそのまま返す。
+    """
+    if not is_enabled() or not issues:
+        return issues, []
+
+    # error（要修正）はAIの判断で消さない。確実性の高いルール指摘を守る。
+    targets = [(i, iss) for i, iss in enumerate(issues) if iss.get("level") != "error"]
+    if not targets:
+        return issues, []
+
+    try:
+        import check_intents
+        matrix = _monthly_matrix(df) if df is not None and not df.empty else []
+        payload = [
+            {
+                "index": local_i,
+                "check_id": iss.get("check_id") or iss.get("category"),
+                "level": iss.get("level"),
+                "account": iss.get("account"),
+                "month": iss.get("month"),
+                # メッセージは要約して送る（全文は冗長）
+                "message": str(iss.get("message", ""))[:300],
+            }
+            for local_i, (_, iss) in enumerate(targets[:_INTENT_MAX_ISSUES])
+        ]
+        result = _ask_intent_review(check_intents.catalog_text(), payload, matrix,
+                                    _feedback_hint(client_name))
+    except Exception as e:
+        print(f"[ai_reviewer] 意図精査スキップ（{e}）", flush=True)
+        return issues, []
+
+    # ── A: 再評価の反映 ──
+    drop_idx = set()
+    for v in result.get("review", []):
+        try:
+            local_i = int(v.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if local_i >= len(targets):
+            continue
+        global_i, iss = targets[local_i]
+        reason = str(v.get("reason", "")).strip()
+        if v.get("keep") is False and reason:
+            # 消すのではなく、判断の根拠を添えて「参考」に降格する。
+            # AIの誤判断で指摘が消えるのを避けるため、担当者の目には残す。
+            iss["level"] = "info"
+            iss["message"] += f"\n〔意図に照らした再評価〕{reason}"
+            iss["category"] = f"{iss.get('category','')}（要確認度: 低）"
+        elif reason:
+            iss["message"] += f"\n〔AI補足〕{reason}"
+
+    kept = [iss for i, iss in enumerate(issues) if i not in drop_idx]
+
+    # ── B: 意図から導いた追加の観点 ──
+    extra = []
+    for f in result.get("additional", [])[:_INTENT_MAX_EXTRA]:
+        msg = str(f.get("message", "")).strip()
+        if not msg:
+            continue
+        basis = str(f.get("basis", "")).strip()
+        extra.append({
+            "level": "info", "category": "AI 意図精査",
+            "check_id": "AI-2",
+            "account": str(f.get("account", ""))[:60] or "（科目不明）",
+            "month": str(f.get("month", ""))[:20] or "全期間",
+            "message": (
+                f"【AI・参考】{msg}"
+                + (f"\n【根拠】{basis}" if basis else "")
+                + "\n※ ルールの条件には該当しませんが、チェックの意図に照らしてAIが"
+                  "確認を提案した項目です。確定的な指摘ではありません。"
+            ),
+        })
+    return kept, extra
+
+
+def _ask_intent_review(catalog: str, issues_payload: list, matrix: list,
+                       feedback_hint: str) -> dict:
+    import anthropic
+    client = anthropic.Anthropic()
+
+    resp = client.messages.create(
+        model=AI_MODEL,
+        max_tokens=8000,
+        system=[
+            # 意図カタログは毎回同じなのでキャッシュする
+            {"type": "text", "text": catalog, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": _INTENT_TASK},
+            {"type": "text", "text": feedback_hint or "（過去の判断履歴なし）"},
+        ],
+        messages=[{
+            "role": "user",
+            "content": (
+                "【ルールが出した指摘】\n"
+                + json.dumps(issues_payload, ensure_ascii=False)
+                + "\n\n【勘定科目ごとの月別発生額】\n"
+                + json.dumps(matrix, ensure_ascii=False)
+                + "\n\nJSONのみで返してください。"
+            ),
+        }],
+    )
+    text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+    return json.loads(_extract_json(text))
