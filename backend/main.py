@@ -191,8 +191,13 @@ async def api_save_prior(
 
         classified = auto_classify_files(file_data)
 
-        def _fname(keyword, default):
-            return next((n for n, _ in file_data if keyword in n), default)
+        def _fname(keyword, default, exclude=None):
+            """保存済み一覧に表示する元ファイル名を選ぶ（表示用）"""
+            return next(
+                (n for n, _ in file_data
+                 if keyword in n and not (exclude and exclude in n)),
+                default,
+            )
 
         to_save = {}
         j = classified.get("journal_prior") or classified.get("journal_current")
@@ -201,7 +206,8 @@ async def api_save_prior(
 
         bm = classified.get("balance_main_prior") or classified.get("balance_main_current")
         if bm:
-            to_save["prior_bal_main"] = (_fname("残高", "残高.txt"), bm)
+            # 「合計残高試算表（全科目補助別）」も「残高」を含むため、主科目側では除外する
+            to_save["prior_bal_main"] = (_fname("残高", "残高.txt", exclude="補助"), bm)
 
         bs = classified.get("balance_sub_prior") or classified.get("balance_sub_current")
         if bs:

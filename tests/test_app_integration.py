@@ -235,6 +235,30 @@ class TestClientApi:
         assert body.get("exclude_accounts") == ["仮払金"]
         assert body.get("fiscal_cutoff_day") == 20
 
+    def test_save_prior_fills_all_three_slots(self, client):
+        """前期3ファイルを保存すると「前期首補助残高」まで埋まること。
+        表示名は「合計残高試算表（全科目）」と「（全科目補助別）」を取り違えないこと。
+        （どちらも名前に「残高」を含むため、主科目側が補助別の名前になっていた）"""
+        from test_jdl_parser import _BALANCE, _BALANCE_SUB, _journal, _row
+
+        name = "前期保存テスト社"
+        files = [
+            ("files", ("会計-仕訳一覧.csv",
+                       io.BytesIO(_journal([_row(60701, 423, "短期借入", 144, "みずほ（", 1000)])
+                                  .encode("utf-8")), "text/csv")),
+            ("files", ("会計-合計残高試算表（全科目）.csv",
+                       io.BytesIO(_BALANCE.encode("utf-8")), "text/csv")),
+            ("files", ("会計-合計残高試算表（全科目補助別）.csv",
+                       io.BytesIO(_BALANCE_SUB.encode("utf-8")), "text/csv")),
+        ]
+        res = client.post(f"/api/clients/{name}/save-prior", files=files)
+        assert res.status_code == 200, res.text
+        saved = client.get(f"/api/clients/{name}").json()["saved_files"]
+        for key in ("prior_journal", "prior_bal_main", "prior_bal_sub"):
+            assert saved[key]["exists"], f"{key} が未保存のまま"
+        assert "補助別" not in saved["prior_bal_main"]["original_name"]
+        assert "補助別" in saved["prior_bal_sub"]["original_name"]
+
 
 class TestFreeeStatus:
     """freee未設定でもエラーにならず状態を返すこと"""
