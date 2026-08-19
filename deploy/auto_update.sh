@@ -36,13 +36,21 @@ cd "$REPO" 2>/dev/null || { log "❌ リポジトリが見つかりません: $R
 # リポジトリの所有者を控えておく（root で git を動かすと所有者が変わるため戻す）
 OWNER="$(stat -c '%U:%G' "$REPO" 2>/dev/null || echo '')"
 
+# 追跡ブランチ（origin/xxx）の設定が無いリポジトリでも動くよう、
+# fetch の結果は FETCH_HEAD で受け取る。
+# あわせて refspec を補っておく（git status 等が正しく動くようにするため）。
+if ! git config --get remote.origin.fetch >/dev/null 2>&1; then
+    git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+    log "ℹ️  remote.origin.fetch が未設定だったため補いました"
+fi
+
 if ! git fetch --quiet origin "$BRANCH" 2>>"$LOG"; then
     log "❌ GitHubからの取得に失敗しました（ネットワークまたは認証）"
     exit 1
 fi
 
 LOCAL="$(git rev-parse HEAD)"
-REMOTE="$(git rev-parse "origin/$BRANCH")"
+REMOTE="$(git rev-parse FETCH_HEAD)"
 
 if [ "$LOCAL" = "$REMOTE" ]; then
     exit 0   # 更新なし。ログにも残さない（毎5分の実行で埋まるため）
@@ -53,7 +61,7 @@ log "🔄 更新を検出: ${LOCAL:0:7} → ${REMOTE:0:7}"
 # デプロイ先なのでローカル変更は保持しない。
 # 万一に備え、切り替え直前の状態を backup-before-update に残す。
 git branch -f backup-before-update "$LOCAL" >/dev/null 2>&1
-if ! git reset --hard --quiet "origin/$BRANCH" 2>>"$LOG"; then
+if ! git reset --hard --quiet "$REMOTE" 2>>"$LOG"; then
     log "❌ 切り替えに失敗しました。更新を中止します"
     exit 1
 fi

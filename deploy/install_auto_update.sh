@@ -37,6 +37,13 @@ if ! git config --global --get-all safe.directory 2>/dev/null | grep -qx "$REPO"
     echo "✅ git safe.directory に $REPO を追加しました"
 fi
 
+# 1b. 追跡ブランチ（origin/xxx）の設定が欠けているリポジトリを補正する
+if ! git -C "$REPO" config --get remote.origin.fetch >/dev/null 2>&1; then
+    git -C "$REPO" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+    git -C "$REPO" fetch --quiet origin "$BRANCH" || true
+    echo "✅ remote.origin.fetch を補いました（origin/$BRANCH が使えるようになります）"
+fi
+
 # 2. 更新スクリプトを配置
 install -m 0755 "$REPO/deploy/auto_update.sh" "$BIN"
 echo "✅ 更新スクリプトを $BIN に配置しました"
