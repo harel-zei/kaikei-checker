@@ -14,12 +14,14 @@ from typing import List, Optional
 
 import freee_client
 import freee_token_store
+import feedback_store
 
 from parsers.csv_parser import (
     parse_csv, parse_opening_balances, parse_ending_balances,
     parse_opening_from_ledger, _is_ledger_format,
     parse_freee_balance, _is_freee_trial_balance,
 )
+from parsers.jdl_parser import is_jdl_balance, parse_jdl_balance
 from parsers.file_detector import auto_classify_files
 from checkers.bs_checker import check_bs, estimate_last_complete_month
 from checkers.pl_checker import check_pl
@@ -30,6 +32,9 @@ from checkers.tax_detail_checker import check_tax_detail
 from checkers.asset_checker import check_assets
 from checkers.ar_ap_checker import check_ar_ap
 from checkers.governance_checker import check_governance
+from checkers.trend_checker import check_trend
+from checkers.reconciliation_checker import check_reconciliation
+from checkers.consistency_checker import check_consistency
 from export_excel import build_checksheet_xlsx
 from client_store import (
     list_clients, save_prior_files, load_prior_files,
@@ -105,10 +110,13 @@ def _parse_balance_file(content: str, use_ending: bool = False) -> dict:
       補助元帳形式（[前期繰越行]）  → parse_opening_from_ledger
       弥生 試算表/補助残高（[明細行]）→ parse_ending_balances or parse_opening_balances
       freee 試算表（試算表：〜）     → parse_freee_balance
+      JDL 合計残高試算表（＜商号Ｃ＞）→ parse_jdl_balance
     """
     if not content:
         return {}
-    if _is_ledger_format(content):
+    if is_jdl_balance(content):
+        return parse_jdl_balance(content, use_ending=use_ending)
+    elif _is_ledger_format(content):
         return parse_opening_from_ledger(content)
     elif _is_freee_trial_balance(content):
         return parse_freee_balance(content, use_ending=use_ending)
@@ -183,8 +191,13 @@ async def api_save_prior(
 
         classified = auto_classify_files(file_data)
 
-        def _fname(keyword, default):
-            return next((n for n, _ in file_data if keyword in n), default)
+        def _fname(keyword, default, exclude=None):
+            """保存済み一覧に表示する元ファイル名を選ぶ（表示用）"""
+            return next(
+                (n for n, _ in file_data
+                 if keyword in n and not (exclude and exclude in n)),
+                default,
+            )
 
         to_save = {}
         j = classified.get("journal_prior") or classified.get("journal_current")
@@ -193,7 +206,8 @@ async def api_save_prior(
 
         bm = classified.get("balance_main_prior") or classified.get("balance_main_current")
         if bm:
-            to_save["prior_bal_main"] = (_fname("残高", "残高.txt"), bm)
+            # 「合計残高試算表（全科目補助別）」も「残高」を含むため、主科目側では除外する
+            to_save["prior_bal_main"] = (_fname("残高", "残高.txt", exclude="補助"), bm)
 
         bs = classified.get("balance_sub_prior") or classified.get("balance_sub_current")
         if bs:
@@ -313,7 +327,8 @@ async def _run_pipeline(file_data, client_name, check_until, ob_direct=None, ext
     # クライアント設定（除外科目）を読み込む
     client_settings = get_client_settings(client_name) if client_name else {}
 
-    return await _run_checks(classified, check_until=check_until, client_settings=client_settings)
+    return await _run_checks(classified, check_until=check_until,
+                             client_settings=client_settings, client_name=client_name)
 
 
 # ═══════════════════════════════════════════════════
@@ -450,6 +465,7 @@ async def _run_checks(
     c: dict,
     check_until: Optional[str] = None,
     client_settings: dict = None,
+    client_name: Optional[str] = None,
 ) -> JSONResponse:
     # 当期仕訳帳
     try:
@@ -555,6 +571,9 @@ async def _run_checks(
         ("資産・修繕費", lambda: check_assets(df_checked)),
         ("債権債務",     lambda: check_ar_ap(df_checked)),
         ("ガバナンス",   lambda: check_governance(df_checked)),
+        ("損益推移",     lambda: check_trend(df_checked, fiscal_cutoff_day)),
+        ("経過勘定消込", lambda: check_reconciliation(df_checked)),
+        ("BS/PL整合",    lambda: check_consistency(df_checked, ob)),
     ]
     for _name, _fn in _checker_jobs:
         try:
@@ -567,16 +586,46 @@ async def _run_checks(
     if prior_df is not None:
         issues.extend(check_yoy(df, prior_df, prior_ob or None, last_month, ob or None))
 
-    # ── AI選別層（PoC）── 重複仕訳などの感覚的判断をClaudeで選別
-    # ANTHROPIC_API_KEY 未設定時はそのまま通す（フェイルオープン）
+    # ── 学習層 ──────────────────────────────────────────
+    # 担当者の判断履歴を反映する。①はAPIキー不要、②③はClaudeを使う。
     try:
         import ai_reviewer
+
+        # ① 学習済み抑制: 繰り返し「不要」とされたパターンを除く（error は対象外）
+        issues, suppressed = ai_reviewer.apply_learned_suppression(issues, client_name)
+        if suppressed:
+            c.setdefault("log", []).append(
+                f"📚 学習済み抑制: 過去に「不要」と判断された指摘 {suppressed}件 を除外"
+            )
+
         if ai_reviewer.is_enabled():
+            # ② AI選別: 重複仕訳などの感覚的判断（過去の判断履歴を参照）
             before = len(issues)
-            issues = ai_reviewer.review_issues(issues)
+            issues = ai_reviewer.review_issues(issues, client_name)
             c.setdefault("log", []).append(
                 f"🤖 AI選別: 重複仕訳などを精査（{before}件→{len(issues)}件）"
             )
+
+            # ③ 見逃し探索: 担当者が登録した観点でAIが追加の候補を探す
+            extra = ai_reviewer.find_missed_issues(df_checked, client_name)
+            if extra:
+                issues.extend(extra)
+                c.setdefault("log", []).append(
+                    f"🔎 AI学習チェック: 過去の見逃し観点から {len(extra)}件 の候補を抽出"
+                )
+
+            # ④ 意図精査: 各チェックが「何を守りたいか」に照らして再評価し、
+            #    条件からは外れるが確認すべき事象も拾う（ルールでは原理的にできない部分）
+            issues, intent_extra = ai_reviewer.review_by_intent(
+                issues, df_checked, client_name)
+            if intent_extra:
+                issues.extend(intent_extra)
+            demoted = sum(1 for i in issues if "要確認度: 低" in str(i.get("category", "")))
+            if intent_extra or demoted:
+                c.setdefault("log", []).append(
+                    f"🧭 AI意図精査: 意図に照らして {demoted}件 を参考扱いに降格、"
+                    f"{len(intent_extra)}件 の観点を追加"
+                )
     except Exception as e:
         print(f"[ai_reviewer] 呼び出し失敗: {e}", flush=True)
 
@@ -584,7 +633,7 @@ async def _run_checks(
     sw_labels = {
         "yayoi_raw": "弥生会計", "yayoi": "弥生会計",
         "freee": "freee", "freee_new": "freee（新形式）",
-        "moneyforward": "MoneyForward",
+        "moneyforward": "MoneyForward", "jdl": "JDL会計",
     }
     if ob:
         c.setdefault("log", []).append(f"📊 当期首残高: {len(ob)}科目（{ob_source}）")
@@ -615,6 +664,53 @@ async def _run_checks(
             "classification_log": c.get("log", []),
         },
         "issues": issues,
+    })
+
+
+# ═══════════════════════════════════════════════════
+# フィードバック（使うほど精度が上がる仕組み）
+# ═══════════════════════════════════════════════════
+@app.post("/api/feedback/verdict")
+async def api_feedback_verdict(request: Request, _: None = Depends(require_auth)):
+    """指摘に対する担当者の判断（妥当 / 不要）を記録する。"""
+    body = await request.json()
+    try:
+        feedback_store.record_verdict(
+            body.get("client_name"), body.get("issue") or {},
+            str(body.get("verdict") or ""), body.get("note", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"フィードバックの保存に失敗しました: {e}")
+    return JSONResponse({"status": "ok",
+                         "stats": feedback_store.stats(body.get("client_name"))})
+
+
+@app.post("/api/feedback/missed")
+async def api_feedback_missed(request: Request, _: None = Depends(require_auth)):
+    """システムが拾えなかった指摘（担当者が手で見つけたもの）を登録する。"""
+    body = await request.json()
+    try:
+        feedback_store.record_missed(
+            body.get("client_name"), body.get("account", ""),
+            body.get("description", ""), body.get("month", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"登録に失敗しました: {e}")
+    return JSONResponse({"status": "ok",
+                         "stats": feedback_store.stats(body.get("client_name"))})
+
+
+@app.get("/api/feedback/stats")
+async def api_feedback_stats(client_name: Optional[str] = None,
+                             _: None = Depends(require_auth)):
+    """学習状況（何件の判断が蓄積され、何パターンを抑制しているか）を返す。"""
+    return JSONResponse({
+        "client": feedback_store.stats(client_name),
+        "all":    feedback_store.stats(feedback_store.GLOBAL_KEY),
     })
 
 

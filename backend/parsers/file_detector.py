@@ -10,6 +10,10 @@ import io
 import pandas as pd
 from typing import Optional
 
+from parsers.jdl_parser import (
+    is_jdl, is_jdl_balance, is_jdl_balance_sub, jdl_period_date,
+)
+
 
 # ── ファイル種別 ──────────────────────────────
 FILE_TYPE_JOURNAL      = "journal"       # 仕訳帳
@@ -24,6 +28,15 @@ PERIOD_PRIOR   = "prior"
 def detect_file_type(content: str) -> str:
     """ファイルの内容からファイル種別を判定する"""
     head = content[:2000]
+
+    # JDL会計（＜商号Ｃ＞で始まる固定ヘッダー）。
+    # 「合計残高試算表」「借方科目」等の語を含むため、他の判定より先に見る。
+    if is_jdl(content):
+        if is_jdl_balance_sub(content):
+            return FILE_TYPE_BALANCE_SUB
+        if is_jdl_balance(content):
+            return FILE_TYPE_BALANCE_MAIN
+        return FILE_TYPE_JOURNAL
 
     # 弥生仕訳帳（ヘッダーなし独自形式）
     if re.search(r'"21\d\d",\d+,"","R\.\d{2}/\d{2}/\d{2}"', head):
@@ -62,6 +75,9 @@ def extract_period_date(content: str, file_type: str) -> Optional[pd.Timestamp]:
     - 仕訳帳: 最新の取引日付
     - 試算表・補助残高: ヘッダーの集計期間（終了日）
     """
+    # JDLは仕訳・試算表とも先頭の「＜決算年月日＞」が期の識別子になる
+    if is_jdl(content):
+        return jdl_period_date(content)
     if file_type == FILE_TYPE_JOURNAL:
         return _latest_journal_date(content)
     else:

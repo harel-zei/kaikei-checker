@@ -5,7 +5,7 @@
 """
 import pandas as pd
 from typing import List, Dict, Any
-from checkers.check_utils import date_safe
+from checkers.check_utils import date_safe, slip_safe
 
 # 主な振込手数料金額
 WIRE_FEE_AMOUNTS = [110, 220, 330, 440, 550, 660, 770, 880, 990, 1100]

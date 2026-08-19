@@ -37,6 +37,54 @@ def check_governance(df: pd.DataFrame) -> List[Dict[str, Any]]:
     issues.extend(_check_5_3_digit_error(df))
     issues.extend(_check_5_4_entertainment(df))
     issues.extend(_check_5_5_withholding(df))
+    issues.extend(_check_5_6_entertainment_limit(df))
+    return issues
+
+
+# ──────────────────────────────────────────────────────────
+# 5-6: 交際費の年間損金算入限度額（中小法人800万円）への接近
+# ──────────────────────────────────────────────────────────
+ENTERTAINMENT_ANNUAL_LIMIT = 8_000_000  # 中小法人の定額控除限度額
+ENTERTAINMENT_WARN_AT      = 6_000_000  # この額を超えたら接近を通知
+
+
+def _check_5_6_entertainment_limit(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    交際費（接待交際費）の累計が、中小法人の損金算入限度額（年800万円）に
+    接近・超過していないかを確認する。
+
+    ※ データの期間＝事業年度とは限らないため、「アップロード期間の累計」で
+      判定し、事業年度累計は別途確認を促す。
+    """
+    issues = []
+    mask_d = df["debit_account"].fillna("").astype(str).str.contains("交際費", na=False)
+    mask_c = df["credit_account"].fillna("").astype(str).str.contains("交際費", na=False)
+    total = float(df[mask_d]["debit_amount"].sum()) - float(df[mask_c]["credit_amount"].sum())
+    if total < ENTERTAINMENT_WARN_AT:
+        return issues
+
+    if total >= ENTERTAINMENT_ANNUAL_LIMIT:
+        level, tag = "warning", "高"
+        note = (
+            "中小法人の定額控除限度額（年800万円）を超えています。"
+            "超過部分は損金不算入となる可能性があります"
+            "（接待飲食費の50%損金算入との有利選択も検討してください）。"
+        )
+    else:
+        level, tag = "info", "低"
+        note = (
+            "中小法人の定額控除限度額（年800万円）に接近しています。"
+            "残りの期間の支出ペースにご留意ください。"
+        )
+
+    issues.append({
+        "level": level, "category": "5-6 交際費限度額",
+        "check_id": "5-6", "account": "交際費", "month": "全期間",
+        "message": (
+            f"【5-6・{tag}】交際費のアップロード期間累計が {total:,.0f}円 です。{note}"
+            "（事業年度の累計額は年度全体で別途ご確認ください）"
+        ),
+    })
     return issues
 
 
@@ -60,8 +108,10 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
         return issues
 
     # 4ヶ月目以降の変動チェック
-    base_months = monthly.iloc[:3]
-    base_amount = base_months.mean()
+    # 基準額は「期首3ヶ月目の額」を使う。定期同額給与は期首3ヶ月以内の改定が
+    # 認められており、正規の改定があった場合は改定後の額で以後同額となるべき。
+    # （3ヶ月平均を基準にすると、正規改定後の全月が誤検知になる）
+    base_amount = monthly.iloc[2]
     check_months = monthly.iloc[3:]
 
     # 変動した月をまとめて1件の指摘にする（月ごとに分けない）
@@ -73,7 +123,7 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
             "check_id": "5-1", "account": "役員報酬",
             "month": str(changed[0][0]),
             "message": (
-                f"【5-1・高】役員報酬が期初3ヶ月の平均額（{base_amount:,.0f}円）から"
+                f"【5-1・高】役員報酬が期首3ヶ月目の額（{base_amount:,.0f}円）から"
                 f"変動している月があります（{len(changed)}ヶ月）: {detail}。"
                 "定期同額給与は期首から3ヶ月以内の改定を除き、"
                 "変動があると損金不算入となる場合があります。"
@@ -90,6 +140,15 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
 # リース料・賃借料は同額の契約を複数持つことが普通のため除外
 DUP_EXCLUDE_ACCOUNTS = ["支払手数料", "支払利息", "雑費", "リース料", "賃借料", "地代家賃"]
 DUP_EXCLUDE_KEYWORDS = ["振込手数料", "手数料", "利息", "振込料", "リース", "メンテナンス"]
+
+# 定型単価の除外:
+# ネット通販の送料（クリックポスト185円等）のように、同じ金額が期中ずっと
+# 毎日何件も発生する取引は、科目名や摘要では除外しきれない。
+# 判定は「同日に複数計上される日が何日あるか」で行う。
+# 二重計上ミスは特定の1日だけ複数になるのに対し、定型単価は
+# ほとんどの日で複数計上されるため、この違いで切り分けられる。
+DUP_ROUTINE_MIN_COUNT      = 20  # 期中の総件数がこれ以上、かつ
+DUP_ROUTINE_MIN_MULTI_DAYS = 5   # 同日複数計上の日数がこれ以上なら定型単価
 
 
 def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
@@ -112,110 +171,127 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
     work = work[~work["description"].fillna("").astype(str).apply(
         lambda x: any(k in x for k in DUP_EXCLUDE_KEYWORDS)
     )]
-    work = work.reset_index(drop=True)
+    # 完全に同一日付の同額・同科目のみを重複候補とするため、日付が無い行は対象外
+    work = work[work["date"].notna()]
     if len(work) < 2:
         return issues
 
-    # 隣接リスト（重複関係）を構築
-    adj: dict = {i: set() for i in range(len(work))}
+    # DataFrame.iloc をループで多用すると激遅なので辞書レコードに変換して扱う。
+    recs = work.to_dict("records")
+    for idx, r in enumerate(recs):
+        r["_i"] = idx
+        r["_date_norm"] = pd.Timestamp(r["date"]).normalize()
 
-    for i in range(len(work)):
-        for j in range(i + 1, min(i + 50, len(work))):  # 近傍50件だけ比較
-            ri = work.iloc[i]
-            rj = work.iloc[j]
+    # 「同一日・同科目・同額」でまずグループ化する。
+    # 重複候補は必ず同一グループに収まるので、総当たり(O(n^2))を避けられる。
+    from collections import defaultdict
+    groups: dict = defaultdict(list)
+    for r in recs:
+        groups[(r["_date_norm"], r["debit_account"], r["debit_amount"])].append(r)
 
-            if ri["debit_amount"] != rj["debit_amount"]:
-                continue
-            if ri["debit_account"] != rj["debit_account"]:
-                continue
-            # 補助科目が異なる場合は別取引 → 重複ではない
-            sub_i = str(ri.get("debit_sub", "")).strip()
-            sub_j = str(rj.get("debit_sub", "")).strip()
-            if sub_i != sub_j and sub_i not in ("", "nan") and sub_j not in ("", "nan"):
-                continue
-            if pd.isna(ri["date"]) or pd.isna(rj["date"]):
-                continue
+    # 定型単価（同一科目・同一金額が、多くの日で同日複数計上される）は重複候補から外す
+    routine_count: dict = defaultdict(int)
+    routine_multi: dict = defaultdict(int)
+    for (_d, acc, amt), g in groups.items():
+        routine_count[(acc, amt)] += len(g)
+        if len(g) >= 2:
+            routine_multi[(acc, amt)] += 1
+    routine_keys = {
+        k for k, cnt in routine_count.items()
+        if cnt >= DUP_ROUTINE_MIN_COUNT
+        and routine_multi[k] >= DUP_ROUTINE_MIN_MULTI_DAYS
+    }
 
-            # 日付が異なる場合は重複ではない（少額・定額取引は別日に同額が出るのが自然）
-            # → 完全に同一日付の同額・同科目のみを重複候補とする
-            if ri["date"].normalize() != rj["date"].normalize():
-                continue
-
-            # 摘要の類似度（簡易）― NaN対策でdesc_safeを使用
-            desc_i = desc_safe(ri)
-            desc_j = desc_safe(rj)
-            similar = _simple_similarity(desc_i, desc_j)
-            if similar <= 0.6:
-                continue
-
-            # ── 除外ルール ──────────────────────────────
-            # ① 往復交通費: 「A〜B」vs「B〜A」は行きと帰り
-            if _is_round_trip(desc_i, desc_j):
-                continue
-            # ② 番号・コード違い: 数字が含まれていてその数字が異なる場合は別取引
-            if _has_different_numbers(desc_i, desc_j):
-                continue
-            # ③ 固有名詞（人名等）の違い: 特定の語が異なる場合は別取引
-            if _has_different_proper_nouns(desc_i, desc_j):
-                continue
-            # ────────────────────────────────────────────
-
-            adj[i].add(j)
-            adj[j].add(i)
-
-    # 連結成分（重複グループ）を求める
-    visited: set = set()
-
-    def _bfs(start: int) -> list:
-        component = []
-        queue = [start]
-        while queue:
-            node = queue.pop()
-            if node in visited:
-                continue
-            visited.add(node)
-            component.append(node)
-            queue.extend(adj[node] - visited)
-        return component
-
-    for i in range(len(work)):
-        if i in visited or not adj[i]:
-            visited.add(i)
+    for (_d, _acc, _amt), group in groups.items():
+        if (_acc, _amt) in routine_keys:
             continue
-        component = _bfs(i)
-        if len(component) < 2:
+        if len(group) < 2:
             continue
 
-        # グループ全体を1件の指摘にまとめる
-        rows = [work.iloc[idx] for idx in sorted(component)]
-        amount    = rows[0]["debit_amount"]
-        account   = str(rows[0]["debit_account"])
-        dates_str = "、".join(str(r["date"].date()) for r in rows)
-        descs     = list(dict.fromkeys(desc_safe(r) for r in rows if desc_safe(r)))
-        desc_part = "　摘要: " + "、".join(f"「{d[:20]}」" for d in descs[:4]) if descs else ""
-        slips     = list(dict.fromkeys(slip_safe(r) for r in rows if slip_safe(r)))
+        # グループ内だけで摘要類似度などを見て重複ペアを結ぶ（グループは通常数件）
+        by_i = {r["_i"]: r for r in group}
+        adj: dict = {r["_i"]: set() for r in group}
+        for a in range(len(group)):
+            for b in range(a + 1, len(group)):
+                ri, rj = group[a], group[b]
+                # 補助科目が異なる場合は別取引 → 重複ではない
+                sub_i = str(ri.get("debit_sub", "")).strip()
+                sub_j = str(rj.get("debit_sub", "")).strip()
+                if sub_i != sub_j and sub_i not in ("", "nan") and sub_j not in ("", "nan"):
+                    continue
 
-        issues.append({
-            "level": "warning", "category": "5-2 重複仕訳",
-            "check_id": "5-2", "account": account,
-            "month": str(rows[0]["date"].to_period("M")),
-            "slip": "、".join(slips[:6]),
-            # AI選別用の最小限データ（顧問先名などの識別情報は含めない）
-            "detail": {
-                "amount": float(amount),
-                "count": len(component),
-                "account": account,
-                "dates": [str(r["date"].date()) for r in rows],
-                "descriptions": descs[:6],
-            },
-            "message": (
-                f"【5-2・高】重複仕訳の可能性があります: "
-                f"同額（{amount:,.0f}円）・同科目（{account}）の仕訳が "
-                f"{len(component)}件 あります。"
-                f"日付: {dates_str}"
-                f"{desc_part}"
-            ),
-        })
+                # 摘要の類似度（簡易）― NaN対策でdesc_safeを使用
+                # 両方とも空欄の場合は「区別する情報がない同日・同科目・同額仕訳」
+                # として重複候補に含める（片方だけ空欄なら別取引とみなしスキップ）
+                desc_i = desc_safe(ri)
+                desc_j = desc_safe(rj)
+                if desc_i or desc_j:
+                    if _simple_similarity(desc_i, desc_j) <= 0.6:
+                        continue
+
+                # ── 除外ルール ──────────────────────────────
+                # ① 往復交通費: 「A〜B」vs「B〜A」は行きと帰り
+                if _is_round_trip(desc_i, desc_j):
+                    continue
+                # ② 番号・コード違い: 数字が含まれていてその数字が異なる場合は別取引
+                if _has_different_numbers(desc_i, desc_j):
+                    continue
+                # ③ 固有名詞（人名等）の違い: 特定の語が異なる場合は別取引
+                if _has_different_proper_nouns(desc_i, desc_j):
+                    continue
+                # ────────────────────────────────────────────
+
+                adj[ri["_i"]].add(rj["_i"])
+                adj[rj["_i"]].add(ri["_i"])
+
+        # グループ内の連結成分（重複グループ）を求める
+        visited: set = set()
+        for start in adj:
+            if start in visited or not adj[start]:
+                visited.add(start)
+                continue
+            component = []
+            queue = [start]
+            while queue:
+                node = queue.pop()
+                if node in visited:
+                    continue
+                visited.add(node)
+                component.append(node)
+                queue.extend(adj[node] - visited)
+            if len(component) < 2:
+                continue
+
+            # グループ全体を1件の指摘にまとめる
+            rows = [by_i[idx] for idx in sorted(component)]
+            amount    = rows[0]["debit_amount"]
+            account   = str(rows[0]["debit_account"])
+            dates_str = "、".join(str(pd.Timestamp(r["date"]).date()) for r in rows)
+            descs     = list(dict.fromkeys(desc_safe(r) for r in rows if desc_safe(r)))
+            desc_part = "　摘要: " + "、".join(f"「{d[:20]}」" for d in descs[:4]) if descs else ""
+            slips     = list(dict.fromkeys(slip_safe(r) for r in rows if slip_safe(r)))
+
+            issues.append({
+                "level": "warning", "category": "5-2 重複仕訳",
+                "check_id": "5-2", "account": account,
+                "month": str(pd.Timestamp(rows[0]["date"]).to_period("M")),
+                "slip": "、".join(slips[:6]),
+                # AI選別用の最小限データ（顧問先名などの識別情報は含めない）
+                "detail": {
+                    "amount": float(amount),
+                    "count": len(component),
+                    "account": account,
+                    "dates": [str(pd.Timestamp(r["date"]).date()) for r in rows],
+                    "descriptions": descs[:6],
+                },
+                "message": (
+                    f"【5-2・高】重複仕訳の可能性があります: "
+                    f"同額（{amount:,.0f}円）・同科目（{account}）の仕訳が "
+                    f"{len(component)}件 あります。"
+                    f"日付: {dates_str}"
+                    f"{desc_part}"
+                ),
+            })
 
     return issues
 

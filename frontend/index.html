@@ -152,6 +152,25 @@
     .tab.active.info    { border-color: var(--orange); font-weight: 700; }
     .tab.active.yoy     { border-color: #7c3aed; font-weight: 700; }
 
+    /* フィードバック（学習）*/
+    .fb-row { margin-top: 9px; padding-top: 8px; border-top: 1px dashed #ecd9c6; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .fb-label { font-size: .75rem; color: #9b8878; }
+    .fb-btn { background: #fdf9f5; border: 1.5px solid #e8d5c0; border-radius: 7px; padding: 3px 11px; font-size: .76rem; cursor: pointer; color: #6b5b4d; }
+    .fb-btn:hover { background: #fff; border-color: var(--orange); color: var(--orange); }
+    .fb-done { font-size: .76rem; color: #059669; font-weight: 600; }
+
+    .learn-panel { margin-top: 18px; background: #fdf9f5; border: 1.5px solid #e8d5c0; border-radius: 11px; padding: 15px 18px; }
+    .learn-head { font-size: .92rem; font-weight: 700; color: #6b5b4d; margin-bottom: 7px; }
+    .learn-stat { font-size: .76rem; font-weight: 400; color: #9b8878; margin-left: 8px; }
+    .learn-note { font-size: .78rem; color: #7a6a5c; line-height: 1.7; margin: 0 0 11px; }
+    .learn-form { display: flex; gap: 7px; flex-wrap: wrap; }
+    .learn-form input { padding: 7px 11px; border: 1.5px solid #e8d5c0; border-radius: 8px; font-size: .82rem; background: white; }
+    .learn-form input:nth-child(1) { width: 190px; }
+    .learn-form input:nth-child(2) { width: 130px; }
+    .learn-form input:nth-child(3) { flex: 1; min-width: 240px; }
+    .learn-form button { background: var(--orange); color: white; border: none; padding: 7px 17px; border-radius: 8px; font-size: .82rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .learn-msg { font-size: .78rem; color: #6b5b4d; margin-top: 8px; min-height: 1em; }
+
     /* 指摘カード */
     .issues { display: flex; flex-direction: column; gap: 10px; }
     .ic { background: white; border-radius: 11px; padding: 14px 18px; box-shadow: 0 1px 6px rgba(0,0,0,0.06); border-left: 4px solid; display: flex; gap: 11px; }
@@ -207,7 +226,7 @@
 <header>
   <img src="/static/harel_logo.png" alt="Harel税理士法人" class="header-logo">
   <h1>会計データチェックシステム</h1>
-  <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward 対応</div>
+  <div class="sub">BS・PL・消費税・前年比較の自動チェック ｜ 弥生・freee・MoneyForward・JDL 対応</div>
 </header>
 
 <div class="container">
@@ -370,7 +389,7 @@
         <div class="icon">📄</div>
         <div class="title" id="dropTitle">当期仕訳帳CSVをドロップ、またはクリックして選択</div>
         <div class="hint">
-          <strong>当期仕訳帳のみ</strong>でOKです（弥生 / freee / MoneyForward）<br>
+          <strong>当期仕訳帳のみ</strong>でOKです（弥生 / freee / MoneyForward / JDL）<br>
           <span style="color:#059669;">✅ 当期首残高は前期データから自動導出されます（別途アップロード不要）</span>
         </div>
         <input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none"
@@ -470,6 +489,26 @@
       </button>
     </div>
     <div class="issues" id="issueList"></div>
+
+    <!-- 学習パネル：使うほど精度が上がる仕組み -->
+    <div class="learn-panel">
+      <div class="learn-head">
+        🧠 チェック精度の学習
+        <span id="learnStat" class="learn-stat">（判断を記録すると、次回以降に反映されます）</span>
+      </div>
+      <p class="learn-note">
+        各指摘の「👍 妥当 / 👎 不要」を押すと記録されます。<br>
+        <strong>「不要」が続いたパターンは、次回から自動で抑制されます。</strong>
+        また、システムが拾えなかった指摘を下に登録すると、次回のチェックでAIが同じ観点を探します。
+      </p>
+      <div class="learn-form">
+        <input type="text" id="missedAccount" placeholder="勘定科目（例: 新聞図書費）">
+        <input type="text" id="missedMonth" placeholder="対象月（例: 2026-06）">
+        <input type="text" id="missedDesc" placeholder="拾ってほしかった指摘内容（例: 毎月ある日経電子版の計上がない）">
+        <button type="button" onclick="sendMissed()">見逃しを登録</button>
+      </div>
+      <div id="missedMsg" class="learn-msg"></div>
+    </div>
   </div>
 
 </div>
@@ -980,6 +1019,7 @@
     if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
+      await warmupServer();
       const data = await fetchJSON('/api/check-auto', { method: 'POST', body: fd }, warmupOpts());
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
@@ -1070,6 +1110,7 @@
     if (checkUntil) fd.append('check_until', checkUntil);
     showLoading();
     try {
+      await warmupServer();
       const data = await fetchJSON('/api/freee/check', { method: 'POST', body: fd }, warmupOpts());
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
@@ -1078,16 +1119,38 @@
   async function runSample() {
     showLoading();
     try {
+      await warmupServer();
       const data = await fetchJSON('/api/sample', undefined, warmupOpts());
       renderResults(data);
     } catch(e) { alert('エラー: ' + e.message); hideLoading(); }
   }
 
   function showLoading() {
-    document.getElementById('loading').style.display  = 'block';
+    const el = document.getElementById('loading');
+    el.style.display  = 'block';
     document.getElementById('results').style.display  = 'none';
+    setLoadingMsg('ファイルを解析・チェック中...');
+    // ローディングが画面外だと処理中か分からないので、見える位置までスクロール
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   function hideLoading() { document.getElementById('loading').style.display = 'none'; }
+
+  // 本処理の前にサーバーを起こす（/healthz を叩いて起動を待つ）。
+  // 起動が確認できてから重いアップロードを送るので、無駄な再送が無く確実。
+  async function warmupServer(maxWaitMs = 180000) {
+    const deadline = Date.now() + maxWaitMs;
+    let waited = false;
+    while (true) {
+      try {
+        const r = await fetch('/healthz', { cache: 'no-store' });
+        if (r.ok) { if (waited) setLoadingMsg('ファイルを解析・チェック中...'); return true; }
+      } catch (_) { /* 起動途中は接続失敗する */ }
+      if (Date.now() >= deadline) return false;
+      waited = true;
+      setLoadingMsg('サーバーを起動しています… そのままお待ちください（初回は30〜90秒かかります）');
+      await sleep(3000);
+    }
+  }
 
   // ── 結果表示 ──
   function renderResults(data) {
@@ -1169,8 +1232,11 @@
         '<div class="empty"><div class="icon">✅</div><p>このカテゴリの指摘はありません</p></div>';
       return;
     }
-    document.getElementById('issueList').innerHTML = issues.map(i => `
-      <div class="ic ${i.level}">
+    document.getElementById('issueList').innerHTML = issues.map(i => {
+      // window._issues 上の位置を渡し、押された指摘を特定できるようにする
+      const idx = window._issues.indexOf(i);
+      return `
+      <div class="ic ${i.level}" id="ic-${idx}">
         <div class="ic-icon">${icons[i.level] || '📌'}</div>
         <div class="ic-body">
           <div class="ic-head">
@@ -1181,9 +1247,85 @@
             ${i.slip ? `<span class="bdg b-mon">伝票No. ${i.slip}</span>` : ''}
           </div>
           <div class="ic-msg">${i.message}</div>
+          <div class="fb-row" id="fb-${idx}">
+            <span class="fb-label">この指摘は：</span>
+            <button type="button" class="fb-btn" onclick="sendVerdict(${idx},'useful')">👍 妥当</button>
+            <button type="button" class="fb-btn" onclick="sendVerdict(${idx},'noise')">👎 不要</button>
+          </div>
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
+  }
+
+  // ── フィードバック（使うほど精度が上がる仕組み）─────────────
+  function currentClientName() {
+    return document.getElementById('clientSelect')?.value
+        || document.getElementById('clientInput')?.value
+        || '';
+  }
+
+  async function sendVerdict(idx, verdict) {
+    const issue = window._issues?.[idx];
+    if (!issue) return;
+    const row = document.getElementById('fb-' + idx);
+    if (row) row.innerHTML = '<span class="fb-label">記録中…</span>';
+    try {
+      const res = await fetch('/api/feedback/verdict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: currentClientName(),
+          issue, verdict,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || '保存に失敗しました');
+      const data = await res.json();
+      if (row) {
+        row.innerHTML = verdict === 'useful'
+          ? '<span class="fb-done">👍 「妥当」として記録しました</span>'
+          : '<span class="fb-done">👎 「不要」として記録しました（次回以降、同様の指摘を抑制します）</span>';
+      }
+      updateLearnStat(data.stats);
+    } catch (e) {
+      if (row) row.innerHTML = `<span class="fb-label" style="color:#c0392b;">記録できませんでした: ${e.message}</span>`;
+    }
+  }
+
+  async function sendMissed() {
+    const acc  = document.getElementById('missedAccount').value.trim();
+    const mon  = document.getElementById('missedMonth').value.trim();
+    const desc = document.getElementById('missedDesc').value.trim();
+    const msg  = document.getElementById('missedMsg');
+    if (!desc) { msg.textContent = '指摘内容を入力してください。'; return; }
+    msg.textContent = '登録中…';
+    try {
+      const res = await fetch('/api/feedback/missed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: currentClientName(),
+          account: acc, month: mon, description: desc,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || '保存に失敗しました');
+      const data = await res.json();
+      msg.textContent = '✅ 登録しました。次回のチェックからAIが同様の観点を探します。';
+      document.getElementById('missedAccount').value = '';
+      document.getElementById('missedMonth').value = '';
+      document.getElementById('missedDesc').value = '';
+      updateLearnStat(data.stats);
+    } catch (e) {
+      msg.textContent = '登録できませんでした: ' + e.message;
+    }
+  }
+
+  function updateLearnStat(s) {
+    if (!s) return;
+    const el = document.getElementById('learnStat');
+    if (!el) return;
+    el.textContent =
+      `この顧問先の学習状況： 判断 ${s.total}件（妥当 ${s.useful} / 不要 ${s.noise}）`
+      + ` ・ 見逃し登録 ${s.missed}件 ・ 抑制中のパターン ${s.suppressed_patterns}件`;
   }
 
   async function exportXLSX() {

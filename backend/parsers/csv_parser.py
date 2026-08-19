@@ -1,15 +1,25 @@
 """
 会計ソフト別CSVパーサー
-対応: 弥生会計（ヘッダーなし独自形式）, freee, MoneyForward
+対応: 弥生会計（ヘッダーなし独自形式）, freee, MoneyForward, JDL会計
 """
 import pandas as pd
+import csv
 import io
 import re
+import warnings
 from typing import Optional
+
+from parsers.jdl_parser import (
+    is_jdl_journal, is_jdl_balance, parse_jdl_journal, parse_jdl_balance,
+)
 
 
 def detect_software(content: str) -> str:
     first_lines = "\n".join(content.split("\n")[:5])
+    # JDL会計は先頭に固定ヘッダー（＜商号Ｃ＞…＜仕訳一覧＞）を持つ。
+    # 「借方科目/貸方科目」列名を持つため、MoneyForward判定より先に見る。
+    if is_jdl_journal(content):
+        return "jdl"
     if re.search(r'"21\d\d",\d+,"","R\.\d{2}/\d{2}/\d{2}"', first_lines):
         return "yayoi_raw"
     # freee 仕訳帳（新）CSV: ヘッダーが "No","取引日","管理番号","借方勘定科目" で始まる
@@ -45,7 +55,77 @@ def parse_yayoi_raw(content: str) -> pd.DataFrame:
     [0]コード [1]伝票番号 [2]空 [3]日付 [4]借方科目 [5]借方補助 [6]空
     [7]借方税区分 [8]借方金額 [9]借方消費税額 [10]貸方科目 [11]貸方補助 [12]空
     [13]貸方税区分 [14]貸方金額 [15]貸方消費税額 [16]摘要
+
+    ファイル全体を csv.reader（C実装）で一括パースし、列ごとにベクトル化して処理する。
+    （旧実装は1行ずつ pd.read_csv を呼び出しており、2万行規模で30秒以上を要した）
     """
+    WIDTH = 17  # 実データの列数
+    try:
+        # csv.reader は引用符・埋め込みカンマ・複数行フィールドを正しく処理する。
+        # 旧実装同様「フィールド数15未満の行は除外」する（ヘッダ・端数行などのノイズ対策）。
+        recs = [r for r in csv.reader(io.StringIO(content)) if len(r) >= 15]
+    except Exception:
+        # 一括パースに失敗した場合は従来の行単位パースにフォールバック
+        return _parse_yayoi_raw_linewise(content)
+
+    if not recs:
+        return pd.DataFrame()
+
+    # 各行を WIDTH 列に正規化（不足は空文字で埋め、超過は切り捨て）
+    norm = [(r + [""] * (WIDTH - len(r)))[:WIDTH] for r in recs]
+    raw = pd.DataFrame(norm, columns=list(range(WIDTH)))
+
+    def _s(i: int) -> pd.Series:
+        """指定列を文字列化し、前後空白と引用符を除去"""
+        return raw[i].astype(str).str.strip().str.strip('"')
+
+    def _n(i: int) -> pd.Series:
+        """指定列を数値化（カンマ除去、失敗は0.0）"""
+        return pd.to_numeric(
+            raw[i].astype(str).str.replace(",", "", regex=False).str.strip(),
+            errors="coerce",
+        ).fillna(0.0)
+
+    df = pd.DataFrame({
+        "date":           _parse_reiwa_series(_s(3)),
+        "slip_no":        _s(1),
+        "debit_account":  _s(4),
+        "debit_sub":      _s(5),
+        "debit_tax":      _s(7),
+        "debit_amount":   _n(8),
+        "debit_tax_amt":  _n(9),
+        "credit_account": _s(10),
+        "credit_sub":     _s(11),
+        "credit_tax":     _s(13),
+        "credit_amount":  _n(14),
+        "credit_tax_amt": _n(15),
+        "description":    _s(16),
+    })
+    df["debit_account"]  = df["debit_account"].replace("nan", "")
+    df["credit_account"] = df["credit_account"].replace("nan", "")
+    return df.reset_index(drop=True)
+
+
+def _parse_reiwa_series(s: pd.Series) -> pd.Series:
+    """日付列（`R.yy/mm/dd` 形式優先）をベクトル化して Timestamp に変換する。
+    parse_reiwa_date と同じ規則: R.形式は年+2018、それ以外は pd.to_datetime。"""
+    m = s.str.extract(r'R\.(\d{2})/(\d{2})/(\d{2})')
+    yy = pd.to_numeric(m[0], errors="coerce")
+    reiwa = pd.to_datetime(
+        {
+            "year":  yy + 2018,
+            "month": pd.to_numeric(m[1], errors="coerce"),
+            "day":   pd.to_numeric(m[2], errors="coerce"),
+        },
+        errors="coerce",
+    )
+    # R.形式に一致しない行のみ通常の日付解析にフォールバック
+    fallback = pd.to_datetime(s.where(yy.isna()), errors="coerce")
+    return reiwa.fillna(fallback)
+
+
+def _parse_yayoi_raw_linewise(content: str) -> pd.DataFrame:
+    """行単位パース（一括読み込みが失敗した場合のフォールバック）"""
     rows = []
     for line in content.split("\n"):
         line = line.strip()
@@ -242,9 +322,19 @@ def _normalize(df: pd.DataFrame) -> pd.DataFrame:
             df[col].astype(str).str.replace(",", "").str.strip(),
             errors="coerce"
         ).fillna(0)
-    # 和暦（令和・平成等）を西暦に変換してから日付解析
-    df["date"] = df["date"].apply(_convert_jp_era)
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    # まず一括で日付解析し、解釈できなかった行のみ和暦（令和・平成等）変換を試す
+    # （全行に和暦変換を適用すると2万行規模で数百msかかるため）
+    raw_dates = df["date"]
+    with warnings.catch_warnings():
+        # 日付形式が混在するファイルで出る「Could not infer format」警告を抑制
+        warnings.simplefilter("ignore", UserWarning)
+        parsed = pd.to_datetime(raw_dates, errors="coerce")
+        mask = parsed.isna() & raw_dates.notna()
+        if mask.any():
+            parsed.loc[mask] = pd.to_datetime(
+                raw_dates[mask].apply(_convert_jp_era), errors="coerce"
+            )
+    df["date"] = parsed
     return df.reset_index(drop=True)
 
 
@@ -256,6 +346,7 @@ def parse_csv(content: str) -> tuple:
         "freee":        parse_freee,
         "freee_new":    parse_freee_new,   # freee 仕訳帳（新）CSV
         "moneyforward": parse_moneyforward,
+        "jdl":          parse_jdl_journal,
     }
     df = parsers.get(software, parse_yayoi_raw)(content)
     return df, software

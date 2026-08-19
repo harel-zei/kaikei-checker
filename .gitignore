@@ -10,6 +10,8 @@ backend/client_data/*/
 __pycache__/
 *.pyc
 *.pyo
+.venv/
+venv/
 
 # テストファイル
 backend/test_*.py

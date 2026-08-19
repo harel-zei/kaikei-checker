@@ -30,6 +30,16 @@ def get_fiscal_period(date: pd.Timestamp, cutoff_day: int = 1) -> pd.Period:
     else:
         return date.to_period("M")
 
+
+def fiscal_period_series(dates: pd.Series, cutoff_day: int = 1) -> pd.Series:
+    """get_fiscal_period のベクトル化版。日付Series全体を一括で会計月に変換する。
+    （2万行規模で1行ずつ apply すると数百msかかるため、集計系チェックはこちらを使う）"""
+    base = dates.dt.to_period("M")
+    if cutoff_day <= 1:
+        return base
+    # 締め日以前の日付は前月度に属する
+    return base.where(dates.dt.day > cutoff_day, base - 1)
+
 # 1-1: 毎月必ず発生すべき定例科目
 RECURRING_ACCOUNTS = [
     "地代家賃", "賃借料", "リース料",
@@ -78,9 +88,7 @@ def _check_1_4_recurring_subaccount(df: pd.DataFrame, fiscal_cutoff_day: int = 1
         return issues
 
     work = df.copy()
-    work["_fp"] = work["date"].apply(
-        lambda d: get_fiscal_period(d, fiscal_cutoff_day) if pd.notna(d) else pd.NaT
-    )
+    work["_fp"] = fiscal_period_series(work["date"], fiscal_cutoff_day)
     all_periods = sorted(work["_fp"].dropna().unique())
     if len(all_periods) < 4:
         return issues
@@ -128,9 +136,7 @@ def _check_1_1_recurring(df: pd.DataFrame, fiscal_cutoff_day: int = 1) -> List[D
 
     # 締め日に基づく会計月を計算
     df = df.copy()
-    df["_fiscal_period"] = df["date"].apply(
-        lambda d: get_fiscal_period(d, fiscal_cutoff_day) if pd.notna(d) else pd.NaT
-    )
+    df["_fiscal_period"] = fiscal_period_series(df["date"], fiscal_cutoff_day)
 
     all_periods = sorted(df["_fiscal_period"].dropna().unique())
     if not all_periods:
