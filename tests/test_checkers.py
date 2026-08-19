@@ -80,6 +80,34 @@ class TestGovernance:
         issues = check_governance(df)
         assert not any(i["check_id"] == "5-2" for i in issues)
 
+    def test_5_2_routine_unit_price_not_flagged(self):
+        """定型単価（ネット通販の送料など）は重複ではない。
+        同じ金額が多数の日で同日複数計上されるパターンは単価が決まっている取引。"""
+        from checkers.governance_checker import check_governance
+        rows = []
+        n = 0
+        for day in range(1, 21):          # 20日 × 3件 = 60件
+            for _ in range(3):
+                n += 1
+                rows.append(je(f"2026-03-{day:02d}", "荷造運賃", "未払金", 185,
+                               desc="クリックポスト", slip=str(n)))
+        issues = check_governance(make_journal(rows))
+        assert not any(i["check_id"] == "5-2" for i in issues)
+
+    def test_5_2_single_day_double_posting_still_flagged(self):
+        """定型単価の除外が、本当の二重計上まで消してしまわないこと。
+        1日だけ2件になっているのは定型パターンではない。"""
+        from checkers.governance_checker import check_governance
+        rows = [
+            je(f"2026-03-{day:02d}", "荷造運賃", "未払金", 185,
+               desc="クリックポスト", slip=str(day))
+            for day in range(1, 26)
+        ]
+        rows.append(je("2026-03-10", "荷造運賃", "未払金", 185,
+                       desc="クリックポスト", slip="999"))
+        issues = check_governance(make_journal(rows))
+        assert any(i["check_id"] == "5-2" for i in issues)
+
     def test_5_2_different_subaccounts_not_flagged(self):
         """補助科目（取引先）が異なる同額仕訳は別取引"""
         from checkers.governance_checker import check_governance

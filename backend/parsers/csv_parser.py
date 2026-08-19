@@ -1,6 +1,6 @@
 """
 会計ソフト別CSVパーサー
-対応: 弥生会計（ヘッダーなし独自形式）, freee, MoneyForward
+対応: 弥生会計（ヘッダーなし独自形式）, freee, MoneyForward, JDL会計
 """
 import pandas as pd
 import csv
@@ -9,9 +9,17 @@ import re
 import warnings
 from typing import Optional
 
+from parsers.jdl_parser import (
+    is_jdl_journal, is_jdl_balance, parse_jdl_journal, parse_jdl_balance,
+)
+
 
 def detect_software(content: str) -> str:
     first_lines = "\n".join(content.split("\n")[:5])
+    # JDL会計は先頭に固定ヘッダー（＜商号Ｃ＞…＜仕訳一覧＞）を持つ。
+    # 「借方科目/貸方科目」列名を持つため、MoneyForward判定より先に見る。
+    if is_jdl_journal(content):
+        return "jdl"
     if re.search(r'"21\d\d",\d+,"","R\.\d{2}/\d{2}/\d{2}"', first_lines):
         return "yayoi_raw"
     # freee 仕訳帳（新）CSV: ヘッダーが "No","取引日","管理番号","借方勘定科目" で始まる
@@ -338,6 +346,7 @@ def parse_csv(content: str) -> tuple:
         "freee":        parse_freee,
         "freee_new":    parse_freee_new,   # freee 仕訳帳（新）CSV
         "moneyforward": parse_moneyforward,
+        "jdl":          parse_jdl_journal,
     }
     df = parsers.get(software, parse_yayoi_raw)(content)
     return df, software

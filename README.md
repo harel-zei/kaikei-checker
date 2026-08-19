@@ -6,6 +6,7 @@
 - 弥生会計
 - freee
 - MoneyForward クラウド会計
+- JDL会計（IBEX出納帳・組曲Major等の「仕訳一覧」「合計残高試算表」CSV）
 
 ## チェック内容
 

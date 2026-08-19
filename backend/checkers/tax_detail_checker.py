@@ -25,6 +25,11 @@ KW_REDUCED_TAX = [
 # または店内飲食（外食＝標準税率10%が正しい）
 KW_REDUCED_TAX_EXCLUDE = [
     "茶屋",       # 天下茶屋・茶屋町など地名
+    # 「パン」を含むが飲食料品ではない語（社名・衣料・印刷物）
+    # 例）キャノンマーケティングジャパン㈱ → 「パン」に誤反応していた
+    # 「ジヤパン」は銀行・カード明細の全角変換で拗音が大書きされた表記
+    "ジャパン", "ジヤパン", "Japan", "JAPAN", "japan",
+    "パンフ", "パンツ", "パンプス", "ジーパン", "パンク", "パンダ",
     "駐輪", "駐車", "交通", "切符", "乗車",
     # 外食・店内飲食は標準税率10%が正しいため除外
     "外食", "会食", "ランチ", "ディナー", "レストラン", "カフェ",
@@ -92,7 +97,12 @@ TAX_8  = ["軽減", "8%"]
 
 
 def _has_tax_10(tax_val: str) -> bool:
-    return any(k in str(tax_val) for k in TAX_10) and not any(k in str(tax_val) for k in TAX_8)
+    # 「非課税仕入」「輸出等免税売上」等は文字列として "課税" を含むが課税10%ではない。
+    # 非課税・不課税・免税を先に除外しないと、これらを10%と誤判定してしまう。
+    s = str(tax_val)
+    if _is_non_taxable(s):
+        return False
+    return any(k in s for k in TAX_10) and not any(k in s for k in TAX_8)
 
 
 def _is_non_taxable(tax_val: str) -> bool:
@@ -267,6 +277,9 @@ def _check_2_3_govt_fee(df: pd.DataFrame) -> List[Dict[str, Any]]:
         "NPC24", "ﾀｲﾑｽﾞ", "タイムズ", "TIMES", "コインパー",
         "研修", "出張", "旅行", "営業", "ＧＯアプリ", "GOアプリ",
         "タクシー", "電車", "バス", "高速", "ＥＴＣ", "ETC",
+        # 輸入消費税（国税分・地方分）は税関に納付するが仕入税額控除の対象。
+        # 摘要の「国税」の語で行政手数料と誤認しないよう除外する。
+        "輸入", "通関", "関税", "税関", "消費税",
     ]
 
     def _is_genuine_govt(text: str) -> bool:

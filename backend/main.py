@@ -21,6 +21,7 @@ from parsers.csv_parser import (
     parse_opening_from_ledger, _is_ledger_format,
     parse_freee_balance, _is_freee_trial_balance,
 )
+from parsers.jdl_parser import is_jdl_balance, parse_jdl_balance
 from parsers.file_detector import auto_classify_files
 from checkers.bs_checker import check_bs, estimate_last_complete_month
 from checkers.pl_checker import check_pl
@@ -109,10 +110,13 @@ def _parse_balance_file(content: str, use_ending: bool = False) -> dict:
       補助元帳形式（[前期繰越行]）  → parse_opening_from_ledger
       弥生 試算表/補助残高（[明細行]）→ parse_ending_balances or parse_opening_balances
       freee 試算表（試算表：〜）     → parse_freee_balance
+      JDL 合計残高試算表（＜商号Ｃ＞）→ parse_jdl_balance
     """
     if not content:
         return {}
-    if _is_ledger_format(content):
+    if is_jdl_balance(content):
+        return parse_jdl_balance(content, use_ending=use_ending)
+    elif _is_ledger_format(content):
         return parse_opening_from_ledger(content)
     elif _is_freee_trial_balance(content):
         return parse_freee_balance(content, use_ending=use_ending)
@@ -623,7 +627,7 @@ async def _run_checks(
     sw_labels = {
         "yayoi_raw": "弥生会計", "yayoi": "弥生会計",
         "freee": "freee", "freee_new": "freee（新形式）",
-        "moneyforward": "MoneyForward",
+        "moneyforward": "MoneyForward", "jdl": "JDL会計",
     }
     if ob:
         c.setdefault("log", []).append(f"📊 当期首残高: {len(ob)}科目（{ob_source}）")

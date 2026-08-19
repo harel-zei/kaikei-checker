@@ -141,6 +141,15 @@ def _check_5_1_director_pay(df: pd.DataFrame) -> List[Dict[str, Any]]:
 DUP_EXCLUDE_ACCOUNTS = ["支払手数料", "支払利息", "雑費", "リース料", "賃借料", "地代家賃"]
 DUP_EXCLUDE_KEYWORDS = ["振込手数料", "手数料", "利息", "振込料", "リース", "メンテナンス"]
 
+# 定型単価の除外:
+# ネット通販の送料（クリックポスト185円等）のように、同じ金額が期中ずっと
+# 毎日何件も発生する取引は、科目名や摘要では除外しきれない。
+# 判定は「同日に複数計上される日が何日あるか」で行う。
+# 二重計上ミスは特定の1日だけ複数になるのに対し、定型単価は
+# ほとんどの日で複数計上されるため、この違いで切り分けられる。
+DUP_ROUTINE_MIN_COUNT      = 20  # 期中の総件数がこれ以上、かつ
+DUP_ROUTINE_MIN_MULTI_DAYS = 5   # 同日複数計上の日数がこれ以上なら定型単価
+
 
 def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
@@ -180,7 +189,22 @@ def _check_5_2_duplicate_entries(df: pd.DataFrame) -> List[Dict[str, Any]]:
     for r in recs:
         groups[(r["_date_norm"], r["debit_account"], r["debit_amount"])].append(r)
 
-    for group in groups.values():
+    # 定型単価（同一科目・同一金額が、多くの日で同日複数計上される）は重複候補から外す
+    routine_count: dict = defaultdict(int)
+    routine_multi: dict = defaultdict(int)
+    for (_d, acc, amt), g in groups.items():
+        routine_count[(acc, amt)] += len(g)
+        if len(g) >= 2:
+            routine_multi[(acc, amt)] += 1
+    routine_keys = {
+        k for k, cnt in routine_count.items()
+        if cnt >= DUP_ROUTINE_MIN_COUNT
+        and routine_multi[k] >= DUP_ROUTINE_MIN_MULTI_DAYS
+    }
+
+    for (_d, _acc, _amt), group in groups.items():
+        if (_acc, _amt) in routine_keys:
+            continue
         if len(group) < 2:
             continue
 

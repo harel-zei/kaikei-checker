@@ -26,6 +26,17 @@ class TestReducedRate21:
             ])
             assert any(i["check_id"] == "2-1" for i in issues), f"{kw} が未検知"
 
+    def test_company_names_containing_pan_not_flagged(self):
+        """「ジャパン」等は社名であって食パンではない。
+        （JDLは取引先名が摘要に入るため、この誤検知が大量に出ていた）"""
+        for desc in ("キヤノンマーケテイングジヤパン（カ", "アマゾンジャパン合同会社",
+                     "パンフレット印刷代", "Japan Post"):
+            issues = _run([
+                je("2026-03-05", "広告宣伝費", "未払金", 55000,
+                   dtax="課対仕入10%", desc=desc),
+            ])
+            assert not any(i["check_id"] == "2-1" for i in issues), f"{desc} を誤検知"
+
     def test_already_8pct_not_flagged(self):
         issues = _run([
             je("2026-03-05", "会議費", "現金", 3000, dtax="課対仕入8%(軽)", desc="会議用弁当"),
@@ -70,6 +81,29 @@ class TestGovtFee23:
             je("2026-03-05", "消耗品費", "現金", 800, dtax="課対仕入10%", desc="市役所 タイムズ駐車場"),
         ])
         assert not any(i["check_id"] == "2-3" for i in issues)
+
+    def test_import_consumption_tax_excluded(self):
+        """輸入消費税（国税分）は税関に納付するが仕入税額控除の対象。
+        「国税」の語で行政手数料と誤認しない。"""
+        for desc in ("ＤＨＬ 海外からの着払い 消費税国税", "輸入消費税 国税", "通関料 国税"):
+            issues = _run([
+                je("2026-03-05", "荷造運賃", "未払金", 30000,
+                   dtax="課対仕入10%", desc=desc),
+            ])
+            assert not any(i["check_id"] == "2-3" for i in issues), f"{desc} を誤検知"
+
+
+class TestTaxRateHelpers:
+    """税区分文字列の判定"""
+
+    def test_non_taxable_is_not_treated_as_10pct(self):
+        """「非課税仕入」は文字列に"課税"を含むが課税10%ではない"""
+        from checkers.tax_detail_checker import _has_tax_10
+        for v in ("非課税仕入", "非課税売上", "輸出等免税売上", "不課税", "対象外"):
+            assert not _has_tax_10(v), f"{v} を10%課税と誤判定"
+        assert _has_tax_10("課対仕入10%")
+        assert _has_tax_10("仕入対課税売上 税率10%")
+        assert not _has_tax_10("仕入対課税売上 軽減税率8%")
 
 
 class TestOverseas:
