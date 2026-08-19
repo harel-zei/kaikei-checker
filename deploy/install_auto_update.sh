@@ -44,9 +44,11 @@ if ! git -C "$REPO" config --get remote.origin.fetch >/dev/null 2>&1; then
     echo "✅ remote.origin.fetch を補いました（origin/$BRANCH が使えるようになります）"
 fi
 
-# 2. 更新スクリプトを配置
-install -m 0755 "$REPO/deploy/auto_update.sh" "$BIN"
-echo "✅ 更新スクリプトを $BIN に配置しました"
+# 2. 起動用スクリプトを配置
+# 本体（deploy/auto_update.sh）はリポジトリ側にあり、そちらの改良は
+# 自動更新で反映される。この起動用スクリプトは基本的に変更しない。
+install -m 0755 "$REPO/deploy/kaikei-update-launcher.sh" "$BIN"
+echo "✅ 起動用スクリプトを $BIN に配置しました"
 
 # 3. systemd のサービスとタイマーを作成
 cat > /etc/systemd/system/kaikei-update.service <<EOF

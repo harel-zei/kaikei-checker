@@ -33,8 +33,15 @@ fi
 
 cd "$REPO" 2>/dev/null || { log "❌ リポジトリが見つかりません: $REPO"; exit 1; }
 
-# リポジトリの所有者を控えておく（root で git を動かすと所有者が変わるため戻す）
-OWNER="$(stat -c '%U:%G' "$REPO" 2>/dev/null || echo '')"
+# root で git を実行するとファイルが root 所有になる。
+# アプリは backend/client_data/ に顧問先データを書き込むため、
+# 更新後は「サービスを動かしているユーザー」に所有権を揃える必要がある。
+# （更新前の所有者に戻すと、元が root 所有だった場合に書き込めなくなる）
+SVC_USER="$(systemctl show "$SERVICE" -p User --value 2>/dev/null)"
+[ -z "$SVC_USER" ] && SVC_USER=root
+SVC_GROUP="$(systemctl show "$SERVICE" -p Group --value 2>/dev/null)"
+[ -z "$SVC_GROUP" ] && SVC_GROUP="$(id -gn "$SVC_USER" 2>/dev/null || echo "$SVC_USER")"
+OWNER="$SVC_USER:$SVC_GROUP"
 
 # 追跡ブランチ（origin/xxx）の設定が無いリポジトリでも動くよう、
 # fetch の結果は FETCH_HEAD で受け取る。
